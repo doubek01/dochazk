@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin – Zaměstnanci</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+  <style>
+    .badge-status {
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 0.9em;
+    }
+    .status-pending { background-color: orange; color: white; }
+    .status-approved { background-color: lightgreen; }
+    .status-paid { background-color: darkgreen; color: white; }
+    .typ-brigadnik { background-color: purple; color: white; padding: 4px 8px; border-radius: 6px; }
+    .typ-kopac { background-color: darkcyan; color: white; padding: 4px 8px; border-radius: 6px; }
+    .profile-box {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 20px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <div class="d-flex justify-content-start gap-2 mb-3">
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-secondary">⬅ Zpět</a>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
+    </div>
+
+    <h2>Seznam zaměstnanců</h2>
+    <table class="table table-hover table-bordered" id="employeeTable">
+      <thead class="table-light">
+        <tr>
+          <th>Jméno</th>
+          <th>Typ závazku</th>
+          <th>Stav</th>
+          <th>Poslední platba</th>
+          <th>Akce</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Dynamicky plněno -->
+      </tbody>
+    </table>
+      <div class="profile-box" id="employeeProfile" style="display: none;">
+        <h3 id="profileName" class="fw-bold mb-4"></h3>
+        <div class="row">
+          <div class="col-md-6">
+            <p><strong>IČO:</strong> <span id="profileIco"></span></p>
+            <p><strong>Bankovní účet:</strong> <span id="profileBank"></span></p>
+            <p><strong>Hodinovka:</strong> <span id="profileRate"></span> Kč/h</p>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-center">
+              <div class="card-body">
+                <h6>Hodin ke schválení</h6>
+                <p class="fs-4 mb-2"><span id="pendingHoursBox">0</span> h</p>
+                <button class="btn btn-sm btn-outline-primary" onclick="openApprovalForm()">Otevřít</button>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card text-center">
+              <div class="card-body">
+                <h6>Hodin k proplacení</h6>
+                <p class="fs-4 mb-2"><span id="unpaidHoursBox">0</span> h</p>
+                <button class="btn btn-sm btn-outline-success" onclick="openPaymentForm()">Otevřít</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+        <div class="accordion mt-3" id="statsAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="headingStats">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseStats" aria-expanded="false" aria-controls="collapseStats">
+                Statistiky docházky
+              </button>
+            </h2>
+            <div id="collapseStats" class="accordion-collapse collapse" aria-labelledby="headingStats" data-bs-parent="#statsAccordion">
+              <div class="accordion-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <ul class="list-group list-group-flush">
+                      <li class="list-group-item">Celkově odpracované hodiny: <span id="totalHours">0</span> h</li>
+                      <li class="list-group-item">Hodiny čekající na schválení: <span class="badge bg-warning text-dark" id="pendingHours">0</span> h</li>
+                      <li class="list-group-item">Hodiny čekající na zaplacení: <span class="badge bg-success bg-opacity-50 text-dark" id="unpaidHours">0</span> h</li>
+                      <li class="list-group-item">Hodiny za posledních 30 dní: <span class="badge bg-primary bg-opacity-50" id="last30DaysHours">0</span> h</li>
+                      <li class="list-group-item">Počet dní v práci za posledních 30 dní: <span id="last30DaysWorkedDays">0</span></li>
+                      <li class="list-group-item">Průměr hodin na pracovní den (30 dní): <span id="avgDailyHours">0</span> h</li>
+                    </ul>
+                  </div>
+                  <div class="col-md-6">
+                    <!-- Sem můžeš později přidat graf -->
+                    <div id="attendanceChart" style="height: 250px;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4">
+            <h5>Docházka</h5>
+            <table id="attendanceTable" class="table table-sm table-bordered">
+              <thead class="table-light">
+                <tr>
+                  <th>Datum</th>
+                  <th>Příchod</th>
+                  <th>Odchod</th>
+                  <th>Hodin</th>
+                  <th>Stav</th>
+                  <th>Akce</th>
+                </tr>
+              </thead>
+              <tbody id="attendanceDetail"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+
+  <script>
+    let employees = [];
+    let selectedEmployee = null;
+
+    async function loadEmployees() {
+      try {
+        const res = await fetch('/api/admin_zamestnanci');
+        if (!res.ok) throw new Error('Chyba při načítání dat');
+        employees = await res.json();
+
+        const tbody = document.querySelector('#employeeTable tbody');
+        tbody.innerHTML = '';
+
+        if (!employees.length) {
+          tbody.innerHTML = '<tr><td colspan="5">Žádní zaměstnanci</td></tr>';
+          return;
+        }
+
+        for (let emp of employees) {
+          const zavazekBadge = emp.typ_zavazku === 'Brigádník'
+            ? '<span class="typ-brigadnik">Brigádník</span>'
+            : '<span class="typ-kopac">Stálý kopáč</span>';
+
+          const stav = `
+            <span class="badge-status status-pending">${emp.stats?.pending_hours || 0}</span>
+            <span class="badge-status status-approved">${emp.stats?.unpaid_hours || 0}</span>`;
+
+          tbody.innerHTML += `
+            <tr>
+              <td>${emp.first_name} ${emp.last_name}</td>
+              <td>${zavazekBadge}</td>
+              <td>${stav}</td>
+              <td>${emp.last_payment || '-'}</td>
+              <td><button class="btn btn-sm btn-primary" onclick="showProfile('${emp.username}')">Zobrazit profil</button></td>
+            </tr>`;
+        }
+
+        new DataTable('#employeeTable');
+      } catch (err) {
+        console.error('Chyba:', err);
+        alert('Nepodařilo se načíst seznam zaměstnanců.');
+      }
+    }
+
+    async function showProfile(username) {
+      const res = await fetch(`/api/admin_zamestnanec/${username}`);
+      const data = await res.json();
+      selectedEmployee = username;
+
+      document.getElementById('employeeProfile').style.display = 'block';
+      document.getElementById('profileName').innerText = data.first_name + ' ' + data.last_name;
+      document.getElementById('profileIco').innerText = data.ico;
+      document.getElementById('profileBank').innerText = data.bank_account;
+      document.getElementById('profileRate').innerText = data.hourly_rate;
+      document.getElementById('pendingHoursBox').innerText = data.stats.pending_hours;
+      document.getElementById('unpaidHoursBox').innerText = data.stats.unpaid_hours;
+
+      document.getElementById('totalHours').innerText = data.stats.total_hours;
+      document.getElementById('pendingHours').innerText = data.stats.pending_hours;
+      document.getElementById('unpaidHours').innerText = data.stats.unpaid_hours;
+      document.getElementById('last30DaysHours').innerText = data.stats.last_30_days_hours;
+      document.getElementById('last30DaysWorkedDays').innerText = data.stats.last_30_days_days;
+      document.getElementById('avgDailyHours').innerText = data.stats.avg_daily_hours;
+
+      const tbody = document.getElementById('attendanceDetail');
+      tbody.innerHTML = '';
+
+      for (let r of data.attendance) {
+        let badge = r.status === 'Čeká na schválení' ? 'status-pending' : r.status === 'Schváleno' ? 'status-approved' : 'status-paid';
+        tbody.innerHTML += `
+          <tr>
+            <td>${r.date}</td>
+            <td>${r.in_time}</td>
+            <td>${r.out_time}</td>
+            <td>${r.hours}</td>
+            <td><span class="badge-status ${badge}">${r.status}</span></td>
+            <td>
+              <button class="btn btn-sm btn-outline-success" onclick="approve('${r.date}', '${selectedEmployee}')">Schválit</button>
+              <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.in_time}', '${r.out_time}', '${r.status}')">Upravit</button>
+            </td>
+          </tr>`;
+      }
+      new DataTable('#attendanceTable');
+    }
+
+    function markAsPaid() {
+      fetch(`/api/admin_zamestnanec_zaplaceno/${selectedEmployee}`, { method: 'POST' })
+        .then(() => showProfile(selectedEmployee));
+    }
+
+    async function updateTime(date, username, in_time, out_time) {
+      await fetch('/api/update_time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username, in_time, out_time })
+      });
+      await showProfile(username);
+    }
+
+    async function approve(date, username) {
+      const row = [...document.querySelectorAll('#attendanceDetail tr')]
+        .find(r => r.children[0].innerText === date);
+
+      const currentStatus = row?.children[4]?.innerText.trim();
+
+      if (currentStatus === 'Proplaceno') {
+        alert('Tento záznam je již označen jako proplacený a nelze ho znovu schválit.');
+        return;
+      }
+
+      await fetch('/api/schvalit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username })
+      });
+      await showProfile(username);
+    }
+
+    async function deleteRecord(date, username) {
+      if (!confirm('Opravdu chcete smazat tento záznam?')) return;
+      await fetch('/api/smazat_zaznam', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username })
+      });
+      await showProfile(username);
+    }
+
+    async function changeStatus(date, username, status) {
+      await fetch('/api/zmenit_stav', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username, status })
+      });
+      await showProfile(username);
+    }
+
+    document.addEventListener('DOMContentLoaded', loadEmployees);
+
+    let editingDate = null;
+    function openEditModal(date, inTime, outTime, status) {
+      editingDate = date;
+      document.getElementById('editDate').value = date;
+      document.getElementById('editIn').value = inTime;
+      document.getElementById('editOut').value = outTime;
+      document.getElementById('editStatus').value = status;
+      new bootstrap.Modal(document.getElementById('editModal')).show();
+    }
+
+    async function saveChanges() {
+      const date = document.getElementById('editDate').value;
+      const in_time = document.getElementById('editIn').value;
+      const out_time = document.getElementById('editOut').value;
+      const status = document.getElementById('editStatus').value;
+
+      await updateTime(date, selectedEmployee, in_time, out_time);
+      await changeStatus(date, selectedEmployee, status);
+      bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+    }
+
+    function confirmDelete() {
+      if (!confirm('Opravdu chcete smazat tento záznam?')) return;
+      deleteRecord(editingDate, selectedEmployee);
+      bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+    }
+
+    function openApprovalForm() {
+      const tbody = document.getElementById('approvalTableBody');
+      tbody.innerHTML = '';
+
+      fetch(`/api/admin_zamestnanec/${selectedEmployee}`)
+        .then(res => res.json())
+        .then(data => {
+          const filtered = data.attendance?.filter(r => r.status === 'Čeká na schválení') || [];
+
+          for (let r of filtered) {
+            tbody.innerHTML += `
+              <tr>
+                <td>${r.date}</td>
+                <td>${r.in_time}</td>
+                <td>${r.out_time}</td>
+                <td>${r.hours}</td>
+                <td class="text-center">
+                  <div class="form-check d-flex justify-content-center">
+                    <input class="form-check-input approval-checkbox" type="checkbox" value="${r.date}">
+                  </div>
+                </td>
+              </tr>`;
+          }
+
+          new bootstrap.Modal(document.getElementById('approvalModal')).show();
+        });
+    }
+    // Funkce pro označení všech checkboxů Approval
+    function toggleAllApprovalCheckboxes() {
+      const checkboxes = document.querySelectorAll('.approval-checkbox');
+      const allChecked = document.getElementById('checkAllApprovals').checked;
+      checkboxes.forEach(cb => cb.checked = allChecked);
+    }
+
+    async function approveSelected() {
+      const selectedDates = [...document.querySelectorAll('.approval-checkbox:checked')].map(cb => cb.value);
+      for (let date of selectedDates) {
+        await fetch('/api/schvalit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, username: selectedEmployee })
+        });
+      }
+      bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+      await showProfile(selectedEmployee);
+    }
+
+    // Funkce pro otevření formuláře pro proplacení
+    function openPaymentForm() {
+      const tbody = document.getElementById('paymentTableBody');
+      tbody.innerHTML = '';
+
+      fetch(`/api/admin_zamestnanec/${selectedEmployee}`)
+        .then(res => res.json())
+        .then(data => {document.getElementById('hourlyRateInput').value = data.hourly_rate;
+
+          const filtered = data.attendance?.filter(r => r.status.toLowerCase().includes('schváleno')) || [];
+          for (let r of filtered) {
+            tbody.innerHTML += `
+              <tr>
+                <td>${r.date}</td>
+                <td>${r.in_time}</td>
+                <td>${r.out_time}</td>
+                <td>${r.hours}</td>
+                <td class="text-center">
+                  <div class="form-check d-flex justify-content-center">
+                    <input class="form-check-input payment-checkbox" type="checkbox" value="${r.date}">
+                  </div>
+                </td>
+              </tr>`;
+          }
+
+          new bootstrap.Modal(document.getElementById('paymentModal')).show();
+        });
+
+    }
+    // Funkce pro označení všech checkboxů Payement
+    function toggleAllPaymentCheckboxes() {
+      const checkboxes = document.querySelectorAll('.payment-checkbox');
+      const allChecked = document.getElementById('checkAllPayments').checked;
+      checkboxes.forEach(cb => cb.checked = allChecked);
+    }
+    // Funkce pro označení vybraných hodin jako proplacené
+    function paySelected() {
+      const checked = [...document.querySelectorAll('.payment-checkbox:checked')]
+        .map(cb => cb.value);
+
+      const hourlyRateInput = document.getElementById('hourlyRateInput');
+      const hourlyRate = hourlyRateInput ? parseFloat(hourlyRateInput.value) : NaN;
+
+      // DEBUG výpis – zobrazí se v konzoli (F12 → Console)
+      console.log("Odesílám platbu:", checked, "Sazba:", hourlyRate);
+
+      // Ochrana: žádné dny nebo špatná hodinová sazba
+      if (!checked.length || isNaN(hourlyRate)) {
+        alert("Zkontroluj výběr dnů a zadanou hodinovou mzdu.");
+        return;
+      }
+      
+      // Tady to vybere jmeno
+      const username = selectedEmployee;
+
+
+      fetch(`/api/admin_zamestnanec_zaplaceno/${username}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          checkedIds: checked,
+          hourlyRate: hourlyRate
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Odpověď ze serveru:", data);
+        if (data.success) {
+          alert('Výplata byla zapsána!');
+          bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide(); // Zavře modal
+          showProfile(selectedEmployee); // Načte znovu profil se všemi daty
+      
+        } else {
+          alert('Chyba: ' + (data.error || 'Neznámá chyba'));
+        }
+      })
+      .catch(error => {
+        console.error("Chyba při fetchi:", error);
+        alert("Nastala chyba při odesílání požadavku.");
+      });
+    }
+    
+    // Aktualizace celkového počtu hodin a celkové výplaty při změně checkboxů
+    document.addEventListener('change', () => {
+      const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
+      const checkboxes = document.querySelectorAll('.payment-checkbox:checked');
+      let totalHours = 0;
+
+      checkboxes.forEach(cb => {
+        const row = cb.closest('tr');
+        const hours = parseFloat(row.children[3].innerText);
+        totalHours += hours || 0;
+      });
+
+      document.getElementById('selectedHoursInput').value = totalHours.toFixed(2);
+      document.getElementById('totalPaymentInput').value = (totalHours * hourlyRate).toFixed(2);
+    });
+
+
+    
+  </script>
+
+  <!-- Modal pro úpravu docházky -->
+  <div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editModalLabel">Upravit docházku</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="editDate">
+          <div class="mb-3">
+            <label for="editIn">Příchod:</label>
+            <input type="time" id="editIn" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label for="editOut">Odchod:</label>
+            <input type="time" id="editOut" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label for="editStatus">Stav:</label>
+            <select id="editStatus" class="form-select">
+              <option>Čeká na schválení</option>
+              <option>Schváleno</option>
+              <option>Proplaceno</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-danger" onclick="confirmDelete()">Smazat</button>
+          <button class="btn btn-primary" onclick="saveChanges()">Uložit změny</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Modal pro schválení hodin -->
+  <div class="modal fade" id="approvalModal" tabindex="-1" aria-labelledby="approvalModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="approvalModalLabel">Hodiny ke schválení</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <div class="d-flex justify-content-end mb-2 pe-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="checkAllApprovals" onclick="toggleAllApprovalCheckboxes()">
+                <label class="form-check-label" for="checkAllApprovals">
+                  Označit vše
+                </label>
+              </div>
+            </div>
+
+          </div>
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Příchod</th>
+                <th>Odchod</th>
+                <th>Hodin</th>
+                <th class="text-center"> </th>
+              </tr>
+            </thead>
+            <tbody id="approvalTableBody"></tbody>
+          </table>
+          <div class="text-end">
+            <button class="btn btn-success" onclick="approveSelected()">Schválit vybrané</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Modal pro proplacení hodin -->
+  <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="paymentModalLabel">Hodiny k proplacení</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row g-2 align-items-end">
+                <div class="row g-2 align-items-end mb-3">
+                  <div class="col-md-4">
+                    <label for="hourlyRateInput" class="form-label">Hodinová sazba (Kč/h)</label>
+                    <input type="number" class="form-control" id="hourlyRateInput" value="0">
+                  </div>
+                  <div class="col-md-4">
+                    <label for="selectedHoursInput" class="form-label">Označené hodiny</label>
+                    <input type="number" class="form-control" id="selectedHoursInput" value="0" readonly>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="totalPaymentInput" class="form-label">K vyplacení (Kč)</label>
+                    <input type="number" class="form-control fw-bold text-success" id="totalPaymentInput" value="0" readonly>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mb-2">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="checkAllPayments" onclick="toggleAllPaymentCheckboxes()">
+              <label class="form-check-label" for="checkAllPayments">
+                Označit vše
+              </label>
+            </div>
+          </div>
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Příchod</th>
+                <th>Odchod</th>
+                <th>Hodin</th>
+                <th class="text-center"> </th>
+              </tr>
+            </thead>
+            <tbody id="paymentTableBody"></tbody>
+          </table>
+          
+          <div class="text-end">
+            <button class="btn btn-success" onclick="paySelected()">Označit jako proplacené</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin – Výplaty</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <div class="d-flex justify-content-start gap-2 mb-3">
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-secondary">⬅ Zpět</a>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
+    </div>
+
+    <h2>Historie výplat</h2>
+
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <label for="employeeFilter" class="form-label">Filtrovat podle zaměstnance</label>
+        <select id="employeeFilter" class="form-select">
+          <option value="">Všichni</option>
+          <!-- Dynamicky doplněno -->
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label for="monthFilter" class="form-label">Filtrovat podle měsíce</label>
+        <select id="monthFilter" class="form-select">
+          <option value="">Všechny měsíce</option>
+          <!-- Dynamicky doplněno -->
+        </select>
+      </div>
+    </div>
+
+    <table id="payoutTable" class="table table-bordered table-striped">
+      <thead class="table-light">
+        <tr>
+          <th>Zaměstnanec</th>
+          <th>Období</th>
+          <th>Hodin</th>
+          <th>Částka (Kč)</th>
+          <th>Datum výplaty</th>
+          <th>Akce</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Naplněno skriptem -->
+      </tbody>
+    </table>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    let allPayouts = [];
+
+    async function loadPayouts() {
+      const res = await fetch('/api/admin_vyplaty');
+      allPayouts = await res.json();
+      updateTable();
+      populateFilters();
+    }
+
+    function updateTable() {
+      const employee = document.getElementById('employeeFilter').value;
+      const month = document.getElementById('monthFilter').value;
+
+      const tbody = document.querySelector('#payoutTable tbody');
+      tbody.innerHTML = '';
+
+      const filtered = allPayouts.filter(p => {
+        const matchEmployee = !employee || p.username === employee;
+        const matchMonth = !month || p.month === month;
+        return matchEmployee && matchMonth;
+      });
+
+      for (let p of filtered) {
+        tbody.innerHTML += `
+          <tr>
+            <td>${p.first_name} ${p.last_name}</td>
+            <td>${p.month}</td>
+            <td>${p.hours}</td>
+            <td>${p.amount}</td>
+            <td>${p.date}</td>
+            <td>
+            
+              <button class="btn btn-sm btn-outline-primary" onclick="showDetailModal(${p.id}, '${p.month}', ${p.amount}, ${p.hours})">
+                Detail
+              </button>
+
+            </td>
+          </tr>`;
+      }
+    }
+
+    function populateFilters() {
+      const employees = [...new Set(allPayouts.map(p => `${p.username}|${p.first_name} ${p.last_name}`))];
+      const months = [...new Set(allPayouts.map(p => p.month))];
+
+      const empSelect = document.getElementById('employeeFilter');
+      for (let emp of employees) {
+        const [username, name] = emp.split('|');
+        empSelect.innerHTML += `<option value="${username}">${name}</option>`;
+      }
+
+      const monthSelect = document.getElementById('monthFilter');
+      for (let m of months.sort().reverse()) {
+        monthSelect.innerHTML += `<option value="${m}">${m}</option>`;
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadPayouts();
+      document.getElementById('employeeFilter').addEventListener('change', updateTable);
+      document.getElementById('monthFilter').addEventListener('change', updateTable);
+      new DataTable('#payoutTable');
+    });
+    async function showDetailModal(id, month, amount, hours) {
+      document.getElementById('detailMonth').textContent = month;
+      document.getElementById('editHours').value = hours;
+      document.getElementById('editAmount').value = amount;
+      document.getElementById('daysList').innerHTML = '';
+      document.getElementById('detailModal').dataset.vyplataId = id;
+
+      const res = await fetch(`/api/admin_vyplata_detail/${id}`);
+      const data = await res.json();
+
+      for (let d of data) {
+        const li = document.createElement('li');
+        li.className = 'list-group-item';
+        li.textContent = `${d.date}: ${d.in_time} – ${d.out_time} (${d.hours.toFixed(2)} h)`;
+        document.getElementById('daysList').appendChild(li);
+      }
+
+      const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+      modal.show();
+    }
+    // Funkce na uložení změn výplaty
+    async function saveChanges() {
+      const id = document.getElementById('detailModal').dataset.vyplataId;
+      const amount = parseFloat(document.getElementById('editAmount').value);
+      const hours = parseFloat(document.getElementById('editHours').value);
+
+      const res = await fetch('/api/update_vyplata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vyplata_id: id, amount, hours })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert('Změny uloženy.');
+        bootstrap.Modal.getInstance(document.getElementById('detailModal')).hide();
+        await loadPayouts(); // reload tabulky
+      } else {
+        alert('Chyba při ukládání změn.');
+      }
+    }
+    // Funkce na smazání výplaty
+    async function deletePayout(id) {
+      const action = prompt(
+        "Jak chcete naložit s navázanými docházkami?\n\n" +
+        "Zadejte jednu z možností:\n" +
+        "1 = Označit zpět jako 'Schváleno'\n" +
+        "2 = Smazat docházky\n" +
+        "3 = Nechat jako 'Proplaceno'\n"
+      );
+
+      if (!['1', '2', '3'].includes(action)) {
+        alert("Zrušeno nebo neplatná volba.");
+        return;
+      }
+
+      const res = await fetch('/api/delete_vyplata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vyplata_id: id, option: action })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert("Výplata byla smazána.");
+        bootstrap.Modal.getInstance(document.getElementById('detailModal'))?.hide();
+        await loadPayouts();
+      } else {
+        alert("Chyba při mazání: " + (data.error || ''));
+      }
+    }
+      
+  </script>
+  <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Detail výplaty</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <p><strong>Období:</strong> <span id="detailMonth"></span></p>
+          <p><strong>Celkem hodin:</strong> <input type="number" id="editHours" class="form-control w-25 d-inline" /> h</p>
+          <p><strong>Celkem částka:</strong> <input type="number" id="editAmount" class="form-control w-25 d-inline" /> Kč</p>
+          <hr>
+          <h6>Konkrétní dny:</h6>
+          <ul id="daysList" class="list-group"></ul>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="saveChanges()">💾 Uložit změny</button>
+          <button class="btn btn-danger" onclick="deletePayout(document.getElementById('detailModal').dataset.vyplataId)">🗑️ Smazat výplatu</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

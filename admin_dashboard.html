@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-light">
+    <div class="container py-5">
+      <h1 class="mb-4">Vítej, {{ username }} (Admin)</h1>
+
+      <div class="mb-3 d-grid gap-2">
+        <a href="{{ url_for('admin_dochazka') }}" class="btn btn-primary btn-lg">Docházka</a>
+        <a href="{{ url_for('admin_zamestnanci') }}" class="btn btn-outline-primary btn-lg">Zaměstnanci</a>
+        <a href="{{ url_for('admin_vyplaty') }}" class="btn btn-outline-primary btn-lg">Výplaty</a>
+        <a href="{{ url_for('admin_users') }}" class="btn btn-outline-primary btn-lg">Správa uživatelů</a>
+      </div>
+
+      <hr>
+
+      <div class="text-end">
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Odhlásit se</a>
+      </div>
+    </div>
+  </body>
+</html>

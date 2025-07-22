@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Docházka</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/index.global.min.css" rel="stylesheet">
+  <style>
+    #calendar {
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .bg-place-benecko {
+      background-color: #ffcccb;
+      color: black;
+    }
+    .bg-place-náchod {
+      background-color: #cce5ff;
+      color: black;
+    }
+    .bg-place-poustevna {
+      background-color: #d4edda;
+      color: black;
+    }
+    .bg-place-trutnov {
+      background-color: #f3e5f5;
+      color: black;
+    }
+    .bg-place-nezadáno {
+      background-color: #e0e0e0;
+      color: black;
+    }
+    .fc-event-pending {
+      background-color: orange !important;
+      border: none;
+    }
+    .fc-event-approved {
+      background-color: lightgreen !important;
+      border: none;
+    }
+    .fc-event-paid {
+      background-color: darkgreen !important;
+      border: none;
+    }
+    .view-toggle {
+      margin-top: 20px;
+    }
+    .active-view-btn {
+      font-weight: bold;
+    }
+    .badge-status {
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 0.9em;
+    }
+    .status-pending {
+      background-color: orange;
+      color: white;
+    }
+    .status-approved {
+      background-color: lightgreen;
+    }
+    .status-paid {
+      background-color: darkgreen;
+      color: white;
+    }
+    .btn-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 6px;
+    }
+    .form-time-group {
+      display: flex;
+      gap: 8px;
+    }
+    .bg-place-benecko,
+    .bg-place-náchod,
+    .bg-place-poustevna,
+    .bg-place-trutnov,
+    .bg-place-nezadáno {
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 0.9em;
+      display: inline-block;
+    }
+  </style>
+  
+</head>
+<body class="bg-light">
+  <div class="container pt-3">
+    <div class="d-flex justify-content-start gap-2">
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-secondary">⬅ Zpět</a>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
+    </div>
+
+    <div class="view-toggle d-flex gap-2">
+      <button id="calendarViewBtn" class="btn btn-outline-primary active-view-btn">Kalendář</button>
+      <button id="tableViewBtn" class="btn btn-outline-primary">Tabulka</button>
+    </div>
+
+    <div id="calendarContainer" class="mt-4">
+      <h2>Přehled docházky (kalendář)</h2>
+      <div id="calendar"></div>
+    </div>
+
+    <div id="tableContainer" class="mt-4" style="display: none;">
+      <h2>Přehled docházky (tabulka)</h2>
+      <div class="table-responsive">
+        <input class="form-control mb-3" id="searchInput" placeholder="Filtruj podle jména nebo data...">
+        <table class="table table-bordered table-hover">
+          <thead class="table-light">
+            <tr>
+              <th onclick="sortTable(0)">Datum</th>
+              <th onclick="sortTable(1)">Zaměstnanec</th>
+              <th>Příchod</th>
+              <th>Odchod</th>
+              <th>Počet hodin</th>
+              <th>Místo</th>
+              <th>Poznámka</th>
+              <th>Stav</th>
+              <th>Akce</th>
+            </tr>
+          </thead>
+          <tbody id="attendanceTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NA ÚPRAVU -->
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Upravit docházku</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="editForm">
+            <input type="hidden" id="editDate">
+            <input type="hidden" id="editUsername">
+
+            <div class="mb-3">
+              <label for="editInTime" class="form-label">Příchod</label>
+              <input type="time" class="form-control" id="editInTime">
+            </div>
+
+            <div class="mb-3">
+              <label for="editOutTime" class="form-label">Odchod</label>
+              <input type="time" class="form-control" id="editOutTime">
+            </div>
+
+            <div class="mb-3">
+              <label for="editStatus" class="form-label">Stav</label>
+              <select class="form-select" id="editStatus">
+                <option value="Čeká na potvrzení">Čeká na potvrzení</option>
+                <option value="Schváleno">Schváleno</option>
+                <option value="Proplaceno">Proplaceno</option>
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label for="editPlace" class="form-label">Místo</label>
+              <input type="text" class="form-control" id="editPlace">
+            </div>
+
+            <div class="mb-3">
+              <label for="editNote" class="form-label">Poznámka</label>
+              <textarea class="form-control" id="editNote" rows="2"></textarea>
+            </div>
+
+            <div class="d-flex justify-content-between">
+              <button type="submit" class="btn btn-success">Uložit změny</button>
+              <button type="button" class="btn btn-danger" id="deleteRecordBtn">Smazat</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let DOCHAZKA = [];
+
+    async function loadDochazka() {
+      const res = await fetch('/api/admin_dochazka');
+      DOCHAZKA = await res.json();
+      calendar.refetchEvents();
+      renderTable();
+    }
+
+    function getStatusBadge(status) {
+      if (status === 'Čeká na potvrzení') return '<span class="badge-status status-pending">' + status + '</span>';
+      if (status === 'Schváleno') return '<span class="badge-status status-approved">' + status + '</span>';
+      if (status === 'Proplaceno') return '<span class="badge-status status-paid">' + status + '</span>';
+      return status;
+    }
+    
+    // Funkce pro vykreslení tabulky
+    function renderTable() {
+      const tbody = document.getElementById('attendanceTableBody');
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      tbody.innerHTML = '';
+      for (let r of DOCHAZKA) {
+        const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+        if (fullName.toLowerCase().includes(search) || r.date.includes(search)) {
+          tbody.innerHTML += `<tr>
+            <td>${r.date}</td>
+            <td>${fullName}</td>
+            <td>${r.in_time}</td>
+            <td>${r.out_time}</td>
+            <td>${r.hours}</td>
+            <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
+
+            <td class="text-muted small">
+              ${
+                r.note
+                  ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                      <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
+                    </a>`
+                  : '<span class="text-muted">bez poznámky</span>'
+              }
+            </td>
+
+
+            <td>${getStatusBadge(r.status)}</td>
+            <td class="btn-actions">
+              <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.username}', '${r.in_time}', '${r.out_time}', '${r.status}', \`${r.place || ''}\`, \`${r.note || ''}\`)">Upravit</button>
+              <button class="btn btn-sm btn-outline-success" onclick="approve('${r.date}', '${r.username}')">Schválit</button>
+            </td>
+          </tr>`;
+        }
+      }
+    }
+
+    function openEditModal(date, username, in_time, out_time, status, place = '', note = '') {
+      document.getElementById('editDate').value = date;
+      document.getElementById('editUsername').value = username;
+      document.getElementById('editInTime').value = in_time;
+      document.getElementById('editOutTime').value = out_time;
+      document.getElementById('editStatus').value = status;
+      document.getElementById('editPlace').value = place;
+      document.getElementById('editNote').value = note;
+      const modal = new bootstrap.Modal(document.getElementById('editModal'));
+      modal.show();
+
+      const detailModalEl = document.getElementById('detailModal');
+      const detailModal = bootstrap.Modal.getOrCreateInstance(detailModalEl);
+      detailModal.hide();  // Skryje modální okno detailu dne
+
+      // Po zavření editace se znovu otevře detail dne
+      document.getElementById('editModal').addEventListener('hidden.bs.modal', function reopenDetailModal() {
+        detailModal.show();
+        this.removeEventListener('hidden.bs.modal', reopenDetailModal); // zamezí opakování
+      });
+
+    }
+
+    document.getElementById('editForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const date = document.getElementById('editDate').value;
+      const username = document.getElementById('editUsername').value;
+      const in_time = document.getElementById('editInTime').value;
+      const out_time = document.getElementById('editOutTime').value;
+      const status = document.getElementById('editStatus').value;
+      const place = document.getElementById('editPlace').value;
+      const note = document.getElementById('editNote').value;
+
+      await fetch('/api/update_time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username, in_time, out_time, place, note })
+      });
+
+      await fetch('/api/zmenit_stav', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username, status })
+      });
+      bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+      await loadDochazka();
+    });
+
+    document.getElementById('deleteRecordBtn').addEventListener('click', async function() {
+      const date = document.getElementById('editDate').value;
+      const username = document.getElementById('editUsername').value;
+      if (confirm('Opravdu chcete tento záznam smazat?')) {
+        await fetch('/api/smazat_zaznam', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, username })
+        });
+        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+        await loadDochazka();
+      }
+    });
+
+    async function approve(date, username) {
+      const record = DOCHAZKA.find(r => r.date === date && r.username === username);
+      if (record && record.status === 'Proplaceno') {
+        alert('Tento záznam je již označen jako proplacený a nelze ho znovu schválit.');
+        return;
+      }
+
+      await fetch('/api/schvalit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, username })
+      });
+      await loadDochazka();
+    }
+
+
+    async function approveAll(date) {
+      await fetch('/api/schvalit_den', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date })
+      });
+      await loadDochazka();
+    }
+
+    function sortTable(colIndex) {
+      const rows = [...document.querySelectorAll('#attendanceTableBody tr')];
+      const sorted = rows.sort((a, b) => a.cells[colIndex].innerText.localeCompare(b.cells[colIndex].innerText));
+      const tbody = document.getElementById('attendanceTableBody');
+      tbody.innerHTML = '';
+      for (const r of sorted) tbody.appendChild(r);
+    }
+
+    let calendar;
+    document.addEventListener('DOMContentLoaded', async function () {
+      calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+        initialView: 'dayGridMonth',
+        locale: 'cs',
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: ''
+        },
+        events: function(fetchInfo, successCallback) {
+          const countsByStatus = {};
+
+          for (let r of DOCHAZKA) {
+            const key = r.date + '_' + r.status;
+            countsByStatus[key] = (countsByStatus[key] || 0) + 1;
+          }
+
+          const events = [];
+          for (const key in countsByStatus) {
+            const [date, status] = key.split('_');
+            let backgroundColor;
+            let titleText;
+
+            if (status === 'Čeká na potvrzení') {
+              backgroundColor = 'orange';
+              titleText = `${countsByStatus[key]} čeká na schválení`;
+            } else if (status === 'Schváleno') {
+              backgroundColor = '#90ee90';
+              titleText = `${countsByStatus[key]} schváleno`;
+            } else if (status === 'Proplaceno') {
+              backgroundColor = 'darkgreen';
+              titleText = `${countsByStatus[key]} proplaceno`;
+            }
+
+            let event = {
+              title: titleText,
+              start: date,
+              allDay: true,
+              backgroundColor: backgroundColor,
+              borderColor: 'transparent'
+            };
+
+            if (status === 'Schváleno') {
+              event.textColor = 'black';
+            }
+
+            events.push(event);
+          }
+
+          successCallback(events);
+        },
+        dateClick: function(info) {
+          const records = DOCHAZKA.filter(r => r.date === info.dateStr);
+          let html = '<ul class="list-group">';
+          for (let r of records) {
+            const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+            html += `<li class="list-group-item">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                  <strong>${fullName}</strong> ${r.in_time} - ${r.out_time} (${r.hours} h)
+                  <span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()} ms-2">${r.place || '-'}</span>
+                </div>
+                <div class="note-preview text-end text-muted small" style="max-width: 40%;">
+                  ${r.note
+                    ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                        <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 50)}${r.note.length > 50 ? '…' : ''}
+                      </a>`
+                    : '<span class="text-muted">bez poznámky</span>'}
+                </div>
+                
+              </div>
+              
+
+              <div class="btn-actions mt-1">
+                ${getStatusBadge(r.status)}
+                <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.username}', '${r.in_time}', '${r.out_time}', '${r.status}', \`${r.place || ''}\`, \`${r.note || ''}\`)">Upravit</button>
+                <button class="btn btn-sm btn-outline-success" onclick="approve('${r.date}', '${r.username}')">Schválit</button>
+              </div>
+            </li>`;
+
+          }
+          html += '</ul><hr><button class="btn btn-success" onclick="approveAll(\'' + info.dateStr + '\')">Schválit celý den</button>';
+          document.getElementById('modalContent').innerHTML = html;
+          const detailModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('detailModal'));
+          detailModal.show();
+
+          // Schovej detailModal při otevření editace
+          document.querySelectorAll('#modalContent .btn-outline-primary').forEach(btn => {
+            btn.addEventListener('click', () => {
+              detailModal.hide();
+            });
+          });
+
+        }
+      });
+
+      calendar.render();
+      await loadDochazka();
+
+      document.getElementById('calendarViewBtn').addEventListener('click', () => {
+        document.getElementById('calendarContainer').style.display = 'block';
+        document.getElementById('tableContainer').style.display = 'none';
+        document.getElementById('calendarViewBtn').classList.add('active-view-btn');
+        document.getElementById('tableViewBtn').classList.remove('active-view-btn');
+      });
+
+      document.getElementById('tableViewBtn').addEventListener('click', () => {
+        document.getElementById('calendarContainer').style.display = 'none';
+        document.getElementById('tableContainer').style.display = 'block';
+        document.getElementById('calendarViewBtn').classList.remove('active-view-btn');
+        document.getElementById('tableViewBtn').classList.add('active-view-btn');
+      });
+
+      document.getElementById('searchInput').addEventListener('input', renderTable);
+    });
+
+    // Funkce na zobrazení celé poznámky
+    function showFullNote(note) {
+      document.getElementById('noteModalBody').innerText = note || '(bez poznámky)';
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('noteModal'));
+      modal.show();
+    }
+
+  </script>
+  <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Záznamy dne</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body" id="modalContent">
+          <!-- dynamicky doplněno -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal na zobrazení celé poznámky -->
+  <div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Celá poznámka</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body" id="noteModalBody"></div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

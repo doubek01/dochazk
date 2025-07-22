@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Docházka</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/index.global.min.css" rel="stylesheet">
+  <style>
+    #calendar {
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .fc-event-pending {
+      background-color: orange !important;
+      color: white !important;
+      border: none;
+    }
+    .fc-event-approved {
+      background-color: lightgreen !important;
+      color: black !important;
+      border: none;
+    }
+    .fc-event-paid {
+      background-color: darkgreen !important;
+      color: white !important;
+      border: none;
+    }
+    .badge-status {
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 0.9em;
+      display: inline-block;
+      text-align: center;
+    }
+    .status-pending {
+      background-color: orange;
+      color: white;
+    }
+    .status-approved {
+      background-color: lightgreen;
+      color: black;
+    }
+    .status-paid {
+      background-color: darkgreen;
+      color: white;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container pt-3">
+    <div class="d-flex justify-content-start gap-2">
+      <a href="javascript:history.back()" class="btn btn-sm btn-secondary">⬅ Zpět</a>
+      <a href="{{ url_for('admin_dashboard') if session.get('is_admin') else url_for('home') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
+    </div>
+  </div>
+
+  <div class="container py-4">
+    <h2>Moje docházka</h2>
+    <div id="calendar"></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal fade" id="attendanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Detail docházky</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="modalInTime" class="form-label">Příchod</label>
+            <span id="modalInTime" class="form-control bg-light"></span>
+          </div>
+          <div class="mb-3">
+            <label for="modalOutTime" class="form-label">Odchod</label>
+            <span id="modalOutTime" class="form-control bg-light"></span>
+          </div>
+          <div class="mb-3">
+            <label for="modalDuration" class="form-label">Počet hodin</label>
+            <span id="modalDuration" class="form-control bg-light"></span>
+          </div>
+          <div class="mb-3">
+            <label for="modalPlace" class="form-label">Místo práce</label>
+            <span id="modalPlace" class="form-control bg-light"></span>
+          </div>
+          <div class="mb-3 d-none" id="modalPlaceCustomWrapper">
+            <label for="modalPlaceCustom" class="form-label">Zadej jiné místo</label>
+            <input type="text" class="form-control" id="modalPlaceCustom">
+          </div>
+          <div class="mb-3">
+            <label for="modalNote" class="form-label">Poznámka</label>
+            <span id="modalNote" class="form-control bg-light"></span>
+          </div>
+          <div class="mb-3">
+            <label for="modalStatus" class="form-label">Stav</label>
+            <span id="modalStatus" class="form-control badge-status"></span>
+          </div>
+          <div class="d-flex justify-content-end">
+            <button id="editBtn" class="btn btn-sm btn-outline-primary">✏️ Upravit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Nový modal pro přidání docházky -->
+  <div class="modal fade" id="newAttendanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Nová docházka</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <form id="newDochazkaForm">
+            <div class="mb-2">
+              <label for="newDate" class="form-label">Datum</label>
+              <input type="text" class="form-control" id="newDate" readonly>
+            </div>
+            <div class="mb-2">
+              <label for="newInTime" class="form-label">Příchod</label>
+              <input type="time" class="form-control" id="newInTime">
+            </div>
+            <div class="mb-2">
+              <label for="newOutTime" class="form-label">Odchod</label>
+              <input type="time" class="form-control" id="newOutTime">
+            </div>
+            <div class="mb-2">
+              <label for="newPlaceSelect" class="form-label">Místo práce</label>
+              <select class="form-select" id="newPlaceSelect">
+                <option value="">– Vyber místo –</option>
+                <option value="Trutnov">Trutnov</option>
+                <option value="Náchod">Náchod</option>
+                <option value="Benecko">Benecko</option>
+                <option value="Poustevna">Poustevna</option>
+                <option value="Diemelstadt">Diemelstadt</option>
+                <option value="Jiné">Jiné</option>
+              </select>
+            </div>
+            <div class="mb-2 d-none" id="newPlaceCustomWrapper">
+              <label for="newPlaceCustom" class="form-label">Zadej jiné místo</label>
+              <input type="text" class="form-control" id="newPlaceCustom">
+            </div>
+            <div class="mb-2">
+              <label for="newNote" class="form-label">Poznámka</label>
+              <textarea class="form-control" id="newNote"></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušit</button>
+          <button type="button" class="btn btn-primary" id="saveNewDochazkaBtn">💾 Uložit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let DOCHAZKA = [];
+    let latestClickedDate = null;
+
+    let modalBodyOriginalHTML;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      modalBodyOriginalHTML = document.querySelector('#attendanceModal .modal-body').innerHTML;
+    });
+
+
+    function calculateDuration(inTime, outTime) {
+      if (!inTime || !outTime || !inTime.includes(':') || !outTime.includes(':')) return '';
+      const [inH, inM] = inTime.split(':').map(Number);
+      const [outH, outM] = outTime.split(':').map(Number);
+      let minutes = (outH * 60 + outM) - (inH * 60 + inM);
+      if (minutes < 0) minutes += 24 * 60;
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return `${h} h ${m} min`;
+    }
+
+    function showModalForDate(dateStr) {
+      
+
+      document.getElementById('attendanceModal').querySelector('.modal-body').innerHTML = modalBodyOriginalHTML;
+      const record = DOCHAZKA.find(r => r.date === dateStr);
+      if (!record) return;
+
+      const modal = new bootstrap.Modal(document.getElementById('attendanceModal'));
+      document.getElementById('modalInTime').textContent = record.in_time || '-';
+      document.getElementById('modalOutTime').textContent = record.out_time || '-';
+      document.getElementById('modalDuration').textContent = calculateDuration(record.in_time, record.out_time) || '-';
+      document.getElementById('modalPlace').textContent = record.place || '-';
+      document.getElementById('modalNote').textContent = record.note || '-';
+
+      const statusEl = document.getElementById('modalStatus');
+      statusEl.textContent = record.status || '-';
+      statusEl.className = 'badge-status';
+      if (record.status === 'Čeká na schválení') statusEl.classList.add('status-pending');
+      else if (record.status === 'Schváleno') statusEl.classList.add('status-approved');
+      else if (record.status === 'Proplaceno') statusEl.classList.add('status-paid');
+
+      document.getElementById('editBtn').classList.remove('d-none');
+      const saveBtn = document.getElementById('saveEditBtn');
+      if (saveBtn) saveBtn.remove();
+
+      document.getElementById('editBtn').onclick = function () {
+        const inSpan = document.getElementById('modalInTime');
+        const outSpan = document.getElementById('modalOutTime');
+        const placeSpan = document.getElementById('modalPlace');
+        const noteSpan = document.getElementById('modalNote');
+        const originalDate = dateStr;
+
+        // Ulož si wrapper dřív, než placeSpan změníš
+        const placeWrapper = placeSpan.parentElement;
+
+        inSpan.outerHTML = `<input type="time" class="form-control" id="modalInTimeInput" value="${inSpan.textContent.trim()}">`;
+        outSpan.outerHTML = `<input type="time" class="form-control" id="modalOutTimeInput" value="${outSpan.textContent.trim()}">`;
+
+        const placeOptions = ['Trutnov', 'Náchod', 'Benecko', 'Poustevna', 'Diemelstadt', 'Jiné'];
+        const currentPlace = placeSpan.textContent.trim();
+
+        placeWrapper.innerHTML = `
+          <label for="modalPlaceSelect" class="form-label">Místo práce</label>
+          <select class="form-select" id="modalPlaceSelect">
+            ${placeOptions.map(opt => `<option value="${opt}" ${opt === currentPlace ? 'selected' : ''}>${opt}</option>`).join('')}
+          </select>
+        `;
+
+        // Pokud bylo vybráno jiné, zobraz input
+        if (currentPlace && !placeOptions.includes(currentPlace)) {
+          document.getElementById('modalPlaceCustomWrapper').classList.remove('d-none');
+          document.getElementById('modalPlaceCustom').value = currentPlace;
+        }
+
+        setTimeout(() => {
+          const selectEl = document.getElementById('modalPlaceSelect');
+          selectEl.addEventListener('change', () => {
+            const wrapper = document.getElementById('modalPlaceCustomWrapper');
+            if (selectEl.value === 'Jiné') {
+              wrapper.classList.remove('d-none');
+            } else {
+              wrapper.classList.add('d-none');
+              document.getElementById('modalPlaceCustom').value = '';
+            }
+          });
+        }, 0);
+
+        noteSpan.outerHTML = `<textarea class="form-control" id="modalNoteInput">${noteSpan.textContent.trim()}</textarea>`;
+
+        const btnWrapper = document.querySelector('#attendanceModal .modal-body .d-flex');
+        if (!document.getElementById('saveEditBtn')) {
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'btn btn-sm btn-success ms-2';
+          saveBtn.id = 'saveEditBtn';
+          saveBtn.innerHTML = '💾 Uložit';
+          saveBtn.onclick = async function () {
+            const newIn = document.getElementById('modalInTimeInput').value;
+            const newOut = document.getElementById('modalOutTimeInput').value;
+
+            let newPlace = '';
+            const selected = document.getElementById('modalPlaceSelect');
+            if (selected) {
+              newPlace = selected.value === 'Jiné'
+                ? document.getElementById('modalPlaceCustom').value.trim()
+                : selected.value;
+            }
+
+            const newNote = document.getElementById('modalNoteInput').value;
+
+            const modalEl = document.getElementById('attendanceModal');
+            modalEl.addEventListener('hidden.bs.modal', async function reopenOnce() {
+              modalEl.removeEventListener('hidden.bs.modal', reopenOnce);
+              await loadDochazka();
+              showModalForDate(originalDate);
+            }, { once: true });
+
+            await fetch('/api/dochazka', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                original_date: originalDate,
+                date: originalDate,
+                in_time: newIn,
+                out_time: newOut,
+                place: newPlace,
+                note: newNote
+              })
+            });
+
+            bootstrap.Modal.getInstance(modalEl).hide();
+          };
+          btnWrapper.appendChild(saveBtn);
+        }
+
+        document.getElementById('editBtn').classList.add('d-none');
+      };
+
+      latestClickedDate = dateStr;
+      modal.show();
+    }
+
+
+    async function loadDochazka() {
+      const res = await fetch('/api/dochazka');
+      const data = await res.json();
+      DOCHAZKA = data.map(r => ({
+        date: r.date,
+        in_time: r.in_time,
+        out_time: r.out_time,
+        status: r.status,
+        place: r.place,
+        note: r.note
+      }));
+      calendar.refetchEvents();
+    }
+
+    let calendar;
+    document.addEventListener('DOMContentLoaded', async function () {
+      const calendarEl = document.getElementById('calendar');
+
+
+      calendar = new FullCalendar.Calendar(calendarEl, {
+        dateClick: function(info) {
+          const record = DOCHAZKA.find(r => r.date === info.dateStr);
+
+          if (record) {
+            const fakeEvent = {
+              event: {
+                extendedProps: record,
+                startStr: record.date
+              }
+            };
+            calendar.getOption('eventClick')(fakeEvent);
+          } else {
+            openNewDochazkaModal(info.dateStr);
+          }
+        },
+        initialView: 'dayGridMonth',
+        locale: 'cs',
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: ''
+        },
+        events: function(fetchInfo, successCallback, failureCallback) {
+          const events = DOCHAZKA.map(record => {
+            let className = '';
+            if (record.status === 'Čeká na schválení') className = 'fc-event-pending';
+            else if (record.status === 'Schváleno') className = 'fc-event-approved';
+            else if (record.status === 'Proplaceno') className = 'fc-event-paid';
+
+            return {
+              title: `${record.in_time} - ${record.out_time}`,
+              start: record.date,
+              classNames: [className],
+              extendedProps: record
+            };
+          });
+          successCallback(events);
+        },
+        eventClick: function(info) {
+          showModalForDate(info.event.startStr);
+        }
+      });
+
+      calendar.render();
+      await loadDochazka();
+    });
+    
+    // Funkce pro otevření modálního okna pro přidání nové docházky
+    function openNewDochazkaModal(dateStr) {
+      const modal = new bootstrap.Modal(document.getElementById('newAttendanceModal'));
+      document.getElementById('newDate').value = dateStr;
+      document.getElementById('newInTime').value = '';
+      document.getElementById('newOutTime').value = '';
+      document.getElementById('newNote').value = '';
+      document.getElementById('newPlaceSelect').value = '';
+      document.getElementById('newPlaceCustomWrapper').classList.add('d-none');
+      document.getElementById('newPlaceCustom').value = '';
+      document.getElementById('newPlaceSelect').addEventListener('change', () => {
+        const wrapper = document.getElementById('newPlaceCustomWrapper');
+        if (document.getElementById('newPlaceSelect').value === 'Jiné') {
+          wrapper.classList.remove('d-none');
+        } else {
+          wrapper.classList.add('d-none');
+          document.getElementById('newPlaceCustom').value = '';
+        }
+      });
+
+
+      document.getElementById('saveNewDochazkaBtn').onclick = async function () {
+        const newIn = document.getElementById('newInTime').value;
+        const newOut = document.getElementById('newOutTime').value;
+        let newPlace = '';
+        const selected = document.getElementById('newPlaceSelect');
+        if (selected.value === 'Jiné') {
+          newPlace = document.getElementById('newPlaceCustom').value.trim();
+        } else {
+          newPlace = selected.value;
+        }
+        const newNote = document.getElementById('newNote').value;
+
+        await fetch('/api/dochazka', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            date: dateStr,
+            in_time: newIn,
+            out_time: newOut,
+            place: newPlace,
+            note: newNote
+          })
+        });
+
+        modal.hide();
+        await loadDochazka();  // obnov kalendář
+      };
+
+      modal.show();
+    }
+
+  </script>
+
+</body>
+</html>

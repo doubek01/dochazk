@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Můj profil</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+  <div class="container pt-3">
+    <div class="d-flex justify-content-start gap-2">
+      <a href="javascript:history.back()" class="btn btn-sm btn-secondary">⬅ Zpět</a>
+      <a href="{{ url_for('admin_dashboard') if session.get('is_admin') else url_for('home') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
+    </div>
+  </div>
+
+  <div class="container py-4">
+    <h1 class="mb-4">Můj profil</h1>
+    <h5 class="mb-4">Zaměstnanec: {{ user.first_name }} {{ user.last_name }}</h5>
+
+    <div id="alertBox" class="alert alert-success d-none" role="alert">
+      Změny byly úspěšně uloženy.
+    </div>
+
+    <!-- Osobní údaje -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4 class="card-title">Osobní údaje</h4>
+
+        <!-- Číslo účtu -->
+        <div class="mb-3">
+          <strong>Číslo účtu:</strong>
+          <div class="d-flex align-items-center">
+            <span id="accountDisplay">{{ user.bank_account or '—' }}</span>
+            <input type="text" class="form-control form-control-sm d-none ms-2" id="accountInput" value="{{ user.bank_account or '' }}">
+            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="toggleEdit('account')">✏️</button>
+            <button class="btn btn-outline-danger btn-sm ms-2 d-none" id="accountCancel" onclick="cancelEdit('account')">✖️</button>
+          </div>
+        </div>
+
+        <!-- IČO -->
+        <div class="mb-3">
+          <strong>IČO:</strong>
+          <div class="d-flex align-items-center">
+            <span id="icoDisplay">{{ user.ico or '—' }}</span>
+            <input type="text" class="form-control form-control-sm d-none ms-2" id="icoInput" value="{{ user.ico or '' }}">
+            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="toggleEdit('ico')">✏️</button>
+            <button class="btn btn-outline-danger btn-sm ms-2 d-none" id="icoCancel" onclick="cancelEdit('ico')">✖️</button>
+          </div>
+        </div>
+
+        <!-- Uložit změny -->
+        <button class="btn btn-primary d-none" id="saveChangesBtn" onclick="saveChanges()">Uložit změny</button>
+      </div>
+    </div>
+
+    <!-- Statistiky -->
+    <div class="card">
+      <div class="card-body">
+        <h4 class="card-title">Statistiky</h4>
+        <ul class="list-group">
+          <li class="list-group-item">Celkově odpracované hodiny: <strong>{{ total_hours }}</strong></li>
+          <li class="list-group-item">Hodiny čekající na potvrzení: <strong>{{ pending_hours }}</strong></li>
+          <li class="list-group-item">Hodiny čekající na zaplacení: <strong>{{ unpaid_hours }}</strong></li>
+          <li class="list-group-item">Hodiny za posledních 30 dní: <strong>{{ last_30_days_hours }}</strong></li>
+          <li class="list-group-item">Počet dní v práci za posledních 30 dní: <strong>{{ last_30_days_days }}</strong></li>
+          <li class="list-group-item">Průměr odpracovaných hodin na pracovní den (30 dní): <strong>{{ avg_daily_hours }}</strong></li>
+        </ul>
+      </div>
+    </div>
+    <h4 class="mt-4">Souhrn podle měsíců</h4>
+    <div class="d-flex flex-wrap gap-3">
+      <!-- Tabulka -->
+      <div class="table-responsive" style="flex: 1 1 400px;">
+        <table class="table table-bordered table-sm bg-white" id="summaryTable">
+          <thead>
+            <tr>
+              <th onclick="sortTable(0)">Měsíc ⬍</th>
+              <th onclick="sortTable(1)">Počet dnů ⬍</th>
+              <th onclick="sortTable(2)">Hodin ⬍</th>
+              <th onclick="sortTable(3)">Průměr ⬍</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in monthly_summary_list %}
+            <tr>
+              <td>{{ m.month }}</td>
+              <td>{{ m.days }}</td>
+              <td>{{ m.hours }}</td>
+              <td>{{ m.avg }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Graf -->
+      <div style="flex: 1 1 400px;">
+        <canvas id="monthlyChart" height="300"></canvas>
+      </div>
+    </div>
+
+      <thead>
+        <tr>
+          <th>Měsíc</th>
+          <th>Počet dnů</th>
+          <th>Odpracováno hodin</th>
+          <th>Průměr na den</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in monthly_summary_list %}
+        <tr>
+          <td>{{ m.month }}</td>
+          <td>{{ m.days }}</td>
+          <td>{{ m.hours }}</td>
+          <td>{{ m.avg }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+
+
+  
+  <script>
+    function toggleEdit(field) {
+      const displaySpan = document.getElementById(field + 'Display');
+      const inputField = document.getElementById(field + 'Input');
+      const cancelBtn = document.getElementById(field + 'Cancel');
+
+      displaySpan.classList.add('d-none');
+      inputField.classList.remove('d-none');
+      cancelBtn.classList.remove('d-none');
+      document.getElementById('saveChangesBtn').classList.remove('d-none');
+    }
+
+    function cancelEdit(field) {
+      const displaySpan = document.getElementById(field + 'Display');
+      const inputField = document.getElementById(field + 'Input');
+      const cancelBtn = document.getElementById(field + 'Cancel');
+
+      inputField.classList.add('d-none');
+      cancelBtn.classList.add('d-none');
+      displaySpan.classList.remove('d-none');
+
+      // Pokud ani jedno není otevřené, skrýt tlačítko Uložit
+      if (document.getElementById('accountInput').classList.contains('d-none') &&
+          document.getElementById('icoInput').classList.contains('d-none')) {
+        document.getElementById('saveChangesBtn').classList.add('d-none');
+      }
+    }
+
+    function saveChanges() {
+      const account = document.getElementById('accountInput').value;
+      const ico = document.getElementById('icoInput').value;
+
+      // Validace IČO a čísla účtu
+      if (ico && !/^\d{8}$/.test(ico)) {
+        alert("IČO musí mít přesně 8 číslic.");
+        return;
+      }
+      if (account && !/^[0-9\-\/]+$/.test(account)) {
+        alert("Číslo účtu obsahuje neplatné znaky.");
+        return;
+      }
+
+      fetch('/update_profile_data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ bank_account: account, ico: ico })
+      })
+      .then(response => {
+        if (response.ok) {
+          document.getElementById('alertBox').classList.remove('d-none');
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          alert("Chyba při ukládání změn.");
+        }
+      });
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Získání dat z tabulky
+    const table = document.getElementById('summaryTable').getElementsByTagName('tbody')[0];
+    const months = [];
+    const hours = [];
+
+    for (let row of table.rows) {
+      months.push(row.cells[0].innerText);
+      hours.push(parseFloat(row.cells[2].innerText));
+    }
+
+    const ctx = document.getElementById('monthlyChart').getContext('2d');
+    const monthlyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: months,
+        datasets: [{
+          label: 'Odpracované hodiny',
+          data: hours,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: ctx => `${ctx.raw} h`
+          }}
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Hodiny' }
+          },
+          x: {
+            ticks: { autoSkip: false },
+            title: { display: true, text: 'Měsíc' }
+          }
+        }
+      }
+    });
+  </script>
+  <script>
+    function sortTable(colIndex) {
+      const table = document.getElementById("summaryTable").getElementsByTagName("tbody")[0];
+      const rows = Array.from(table.rows);
+      const isNumeric = colIndex > 0;
+
+      rows.sort((a, b) => {
+        const aVal = a.cells[colIndex].innerText;
+        const bVal = b.cells[colIndex].innerText;
+
+        return isNumeric
+          ? parseFloat(aVal) - parseFloat(bVal)
+          : aVal.localeCompare(bVal);
+      });
+
+      // Reverse if already sorted ascending
+      if (table.sortedCol === colIndex && !table.reversed) {
+        rows.reverse();
+        table.reversed = true;
+      } else {
+        table.reversed = false;
+      }
+      table.sortedCol = colIndex;
+
+      // Překreslení řazení
+      rows.forEach(row => table.appendChild(row));
+
+      // Aktualizace grafu
+      updateChartFromTable();
+    }
+
+    function updateChartFromTable() {
+      const rows = document.getElementById("summaryTable").getElementsByTagName("tbody")[0].rows;
+      const newLabels = [];
+      const newData = [];
+
+      for (let row of rows) {
+        newLabels.push(row.cells[0].innerText);
+        newData.push(parseFloat(row.cells[2].innerText));
+      }
+
+      monthlyChart.data.labels = newLabels;
+      monthlyChart.data.datasets[0].data = newData;
+      monthlyChart.update();
+    }
+    </script>
+
+
+</body>
+</html>
