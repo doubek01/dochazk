@@ -1,13 +1,36 @@
-from flask import Flask, render_template, redirect, url_for, request, session, jsonify, g
+from flask import Flask, render_template, redirect, url_for, request, session, jsonify, g, flash
+from werkzeug.security import check_password_hash
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import session, redirect, url_for
 from collections import defaultdict
-import sqlite3
+from flask_migrate import Migrate
+
+
+from flask_sqlalchemy import SQLAlchemy
+from models import db, User, Dochazka, Vyplata, VyplataDochazky
+from dotenv import load_dotenv
+
 import os
 import pytz
 import locale
 import calendar
+import urllib.parse
+import bcrypt
+
+
+# Načti proměnné z .env souboru
+load_dotenv()
+
+# Inicializace Flask aplikace
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "default_secret")
+
+# Konfigurace databáze
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+migrate = Migrate(app, db)
 
 
 def login_required(f):
@@ -20,28 +43,33 @@ def login_required(f):
 
     return decorated_function
 
+# Přihlášení
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
 
-app = Flask(__name__)
-app.secret_key = 'tajnysuperklic123'
+        user = User.query.filter_by(username=username).first()
 
-DATABASE = 'dochazka.db'
+        if user and bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
+            session['username'] = user.username
+            session['user_id'] = user.id
+            session['is_admin'] = user.is_admin
+            flash('Přihlášení proběhlo úspěšně', 'success')
+            return redirect(url_for('admin_dashboard') if user.is_admin else url_for('dashboard'))
+        else:
+            flash('Neplatné přihlašovací údaje', 'danger')
 
+    return render_template('login.html')
 
-# Pomocná funkce pro připojení k DB
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+# Přechod na dashboard
+@app.route('/dashboard')
+def dashboard():
+    if 'username' not in session:
+        return redirect(url_for('login'))
 
-
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
-
+    return render_template('dashboard.html')
 
 # Hlavní stránka / dashboard
 @app.route('/')
@@ -49,16 +77,14 @@ def home():
     if 'username' not in session:
         return redirect(url_for('login'))
 
-    db = get_db()
     username = session['username']
     today_str = datetime.today().strftime("%Y-%m-%d")
 
-    record = db.execute(
-        'SELECT in_time, out_time FROM dochazka WHERE username = ? AND date = ?',
-        (username, today_str)).fetchone()
+    # Získání dnešního záznamu
+    record = Dochazka.query.filter_by(username=username, date=today_str).first()
 
-    today_in = record['in_time'] if record else None
-    today_out = record['out_time'] if record else None
+    today_in = record.in_time if record else None
+    today_out = record.out_time if record else None
 
     # Výpočet aktuálního času
     cz_time = datetime.now(pytz.timezone("Europe/Prague"))
@@ -78,16 +104,17 @@ def home():
     monday = datetime.today() - timedelta(days=datetime.today().weekday())
     monday_str = monday.strftime("%Y-%m-%d")
 
-    rows = db.execute(
-        'SELECT in_time, out_time FROM dochazka WHERE username = ? AND date >= ?',
-        (username, monday_str)).fetchall()
+    rows = Dochazka.query.filter(
+        Dochazka.username == username,
+        Dochazka.date >= monday_str
+    ).all()
 
     weekly_hours = 0
     for r in rows:
-        if r['in_time'] and r['out_time']:
+        if r.in_time and r.out_time:
             try:
-                in_dt = datetime.strptime(r['in_time'], "%H:%M")
-                out_dt = datetime.strptime(r['out_time'], "%H:%M")
+                in_dt = datetime.strptime(r.in_time, "%H:%M")
+                out_dt = datetime.strptime(r.out_time, "%H:%M")
                 weekly_hours += max(0, (out_dt - in_dt).total_seconds() / 3600)
             except:
                 continue
@@ -101,22 +128,10 @@ def home():
                            today_hours=today_hours)
 
 
-# Otevření Docházka.html
-@app.route('/dochazka')
-def dochazka():
-    if 'username' not in session:
-        return redirect(url_for('login'))
-    if session.get('is_admin'):
-        return render_template('admin_dochazka.html',
-                               username=session['username'])
-    return render_template('dochazka.html', username=session['username'])
-
-
 # Zadat příchod na Dashboardu
 @app.route('/zadat_prichod', methods=['POST'])
 @login_required
 def zadat_prichod():
-    db = get_db()
     username = session['username']
 
     cz = pytz.timezone('Europe/Prague')
@@ -124,12 +139,24 @@ def zadat_prichod():
     date_str = now.strftime('%Y-%m-%d')
     time_str = now.strftime('%H:%M')
 
-    db.execute(
-        '''
-        INSERT OR REPLACE INTO dochazka (username, date, in_time, out_time, status)
-        VALUES (?, ?, ?, (SELECT out_time FROM dochazka WHERE username = ? AND date = ?), 'Čeká na schválení')
-    ''', (username, date_str, time_str, username, date_str))
-    db.commit()
+    existing_record = Dochazka.query.filter_by(username=username, date=date_str).first()
+    out_time = existing_record.out_time if existing_record else None
+
+    if existing_record:
+        existing_record.in_time = time_str
+        existing_record.out_time = out_time
+        existing_record.status = 'Čeká na schválení'
+    else:
+        new_record = Dochazka(
+            username=username,
+            date=date_str,
+            in_time=time_str,
+            out_time=out_time,
+            status='Čeká na schválení'
+        )
+        db.session.add(new_record)
+
+    db.session.commit()
     return redirect(url_for('home'))
 
 
@@ -149,42 +176,16 @@ def zadat_odchod():
     if place == 'vlastni' and custom_place:
         place = custom_place
 
-    db = get_db()
-    db.execute(
-        '''
-        UPDATE dochazka
-        SET out_time = ?, status = 'Čeká na schválení', place = ?, note = ?
-        WHERE username = ? AND date = ?
-        ''', (out_time, place, note, username, date_str))
-    db.commit()
+    record = Dochazka.query.filter_by(username=username, date=date_str).first()
+    if record:
+        record.out_time = out_time
+        record.status = 'Čeká na schválení'
+        record.place = place
+        record.note = note
+        db.session.commit()
+
     return redirect(url_for('home'))
 
-
-# Funkce na smazání docházky
-@app.route('/api/dochazka', methods=['DELETE'])
-@login_required
-def delete_dochazka():
-    data = request.get_json()
-    date = data.get('date')
-    username = session['username']
-
-    db = get_db()
-    if not date:
-        return jsonify({"error": "Missing date"}), 400
-
-    # Zjisti roli
-    user = db.execute('SELECT is_admin FROM users WHERE username = ?',
-                      (username, )).fetchone()
-    is_admin = user and user['is_admin'] == 1
-
-    if is_admin:
-        db.execute('DELETE FROM dochazka WHERE date = ?', (date, ))
-    else:
-        db.execute('DELETE FROM dochazka WHERE username = ? AND date = ?',
-                   (username, date))
-
-    db.commit()
-    return jsonify({"success": True})
 
 
 @app.route('/admin/dochazka')
@@ -316,91 +317,81 @@ def update_profile_data():
 #Konec Muj profil
 
 
-# Přihlášení
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    error = None
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        db = get_db()
-        cur = db.execute(
-            'SELECT password, is_admin FROM users WHERE username = ?',
-            (username, ))
-        user = cur.fetchone()
-        if user and user['password'] == password:
-            session['username'] = username
-            session['is_admin'] = bool(user['is_admin'])
-            if user['is_admin']:
-                return redirect(url_for('admin_dashboard'))
-            else:
-                return redirect(url_for('home'))
-        error = 'Špatné jméno nebo heslo'
-    return render_template('login.html', error=error)
-
-
 # Odhlášení
 @app.route('/logout')
 def logout():
     session.clear()
+    flash('Byl jste úspěšně odhlášen.', 'info')
     return redirect(url_for('login'))
 
 
 # Admin dashboard cesta
 @app.route('/admin_dashboard')
+@login_required
 def admin_dashboard():
-    if 'username' not in session or not session.get('is_admin'):
+    if not session.get('is_admin'):
+        flash('Přístup pouze pro administrátory.', 'danger')
         return redirect(url_for('login'))
 
-    return render_template('admin_dashboard.html',
-                           username=session['username'])
+    username = session.get('username') or 'Admin'
+    return render_template('admin_dashboard.html', username=username)
 
 
-# Admin - správa uživatelů
+# Admin - správa uživatelů a vytvoření nového
 @app.route('/admin/users', methods=['GET', 'POST'])
+@login_required
 def admin_users():
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-    db = get_db()
+
     error = None
-    if request.method == 'POST':
+
+    if request.method == 'POST' and 'username' in request.form:
         username = request.form['username']
         password = request.form['password']
         first_name = request.form.get('first_name')
         last_name = request.form.get('last_name')
         note = request.form.get('note') or ''
-        is_admin = 1 if request.form.get('is_admin') == 'on' else 0
+        is_admin = True if request.form.get('is_admin') == 'on' else False
         position = request.form.get('position') or 'Stálý kopáč'
         hourly_rate = request.form.get('hourly_rate') or None
+
         # Kontrola duplicity
-        cur = db.execute('SELECT id FROM users WHERE username = ?',
-                         (username, ))
-        if cur.fetchone():
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
             error = f"Uživatel '{username}' už existuje."
         else:
-            db.execute(
-                '''INSERT INTO users
-                   (username, password, first_name, last_name, note, job_location,
-                    is_admin, hourly_rate)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                (username, password, first_name, last_name, note, position,
-                 is_admin, hourly_rate))
-            db.commit()
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            new_user = User(
+                username=username,
+                password=hashed_password.decode('utf-8'),
+                first_name=first_name,
+                last_name=last_name,
+                note=note,
+                job_location=position,
+                is_admin=is_admin,
+                hourly_rate=hourly_rate
+            )
+            db.session.add(new_user)
+            db.session.commit()
             return redirect(url_for('admin_users'))
-    # Načtení uživatelů
-    rows = db.execute('SELECT * FROM users').fetchall()
-    users = [dict(r) for r in rows]
+
+    users = User.query.all()
     return render_template('admin_users.html', users=users, error=error)
 
 
-# Admin - smazat uživatele
+# Admin – smazání uživatele
 @app.route('/admin/users/delete/<int:user_id>', methods=['POST'])
+@login_required
 def delete_user(user_id):
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-    db = get_db()
-    db.execute('DELETE FROM users WHERE id = ?', (user_id, ))
-    db.commit()
+
+    user_to_delete = User.query.get(user_id)
+    if user_to_delete:
+        db.session.delete(user_to_delete)
+        db.session.commit()
+
     return redirect(url_for('admin_users'))
 
 
@@ -409,32 +400,39 @@ def delete_user(user_id):
 def edit_user(user_id):
     if not session.get('is_admin'):
         return redirect(url_for('login'))
-    db = get_db()
-    # Zpracování úprav z modalu
+
+    user = User.query.get(user_id)
+    if not user:
+        return redirect(url_for('admin_users'))
+
     username = request.form['username']
     password = request.form.get('password')
     first_name = request.form.get('first_name')
     last_name = request.form.get('last_name')
     note = request.form.get('note') or ''
     job_location = request.form.get('job_location') or 'Stálý kopáč'
-    is_admin = 1 if request.form.get('is_admin') == 'on' else 0
+    is_admin = True if request.form.get('is_admin') == 'on' else False
     hourly_rate = request.form.get('hourly_rate') or None
-    # Update v DB
+
+    user.username = username
+    user.first_name = first_name
+    user.last_name = last_name
+    user.note = note
+    user.job_location = job_location
+    user.is_admin = is_admin
+    user.hourly_rate = hourly_rate
+
     if password:
-        db.execute(
-            '''UPDATE users SET username=?, password=?, first_name=?, last_name=?,
-               note=?, job_location=?, is_admin=?, hourly_rate=?
-               WHERE id=?''', (username, password, first_name, last_name, note,
-                               job_location, is_admin, hourly_rate, user_id))
-    else:
-        db.execute(
-            '''UPDATE users SET username=?, first_name=?, last_name=?,
-               note=?, job_location=?, is_admin=?, hourly_rate=?
-               WHERE id=?''', (username, first_name, last_name, note,
-                               job_location, is_admin, hourly_rate, user_id))
-    db.commit()
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        user.password = hashed_password.decode('utf-8')
+
+    db.session.commit()
     return redirect(url_for('admin_users'))
 
+
+# Konec admin_users
+#__________________________________________________________________________________________
+#Začátek admin docházky
 
 # API pro admin docházku
 @app.route('/api/admin_dochazka')
@@ -442,21 +440,23 @@ def api_admin_dochazka():
     if not session.get('is_admin'):
         return jsonify({'error': 'Přístup zamítnut'}), 403
 
-    db = get_db()
-    records = db.execute('''
-        SELECT d.username, d.date, d.in_time, d.out_time, d.status,
-               d.place, d.note,
-               u.first_name, u.last_name
-
-        FROM dochazka d
-        LEFT JOIN users u ON d.username = u.username
-        ''').fetchall()
+    records = db.session.query(
+        Dochazka.username,
+        Dochazka.date,
+        Dochazka.in_time,
+        Dochazka.out_time,
+        Dochazka.status,
+        Dochazka.place,
+        Dochazka.note,
+        User.first_name,
+        User.last_name
+    ).join(User, Dochazka.username == User.username, isouter=True).all()
 
     data = []
     for r in records:
         try:
-            h1, m1 = map(int, r['in_time'].split(':'))
-            h2, m2 = map(int, r['out_time'].split(':'))
+            h1, m1 = map(int, r.in_time.split(':'))
+            h2, m2 = map(int, r.out_time.split(':'))
             minutes = (h2 * 60 + m2) - (h1 * 60 + m1)
             if minutes < 0:
                 minutes += 1440
@@ -465,129 +465,106 @@ def api_admin_dochazka():
             hours = 0
 
         data.append({
-            'username': r['username'],
-            'date': r['date'],
-            'in_time': r['in_time'],
-            'out_time': r['out_time'],
-            'status': r['status'],
-            'place': r['place'] or '',
-            'note': r['note'] or '',
-            'first_name': r['first_name'] or '',
-            'last_name': r['last_name'] or '',
+            'username': r.username,
+            'date': r.date,
+            'in_time': r.in_time,
+            'out_time': r.out_time,
+            'status': r.status,
+            'place': r.place or '',
+            'note': r.note or '',
+            'first_name': r.first_name or '',
+            'last_name': r.last_name or '',
             'hours': hours
         })
 
     return jsonify(data)
 
-
-# API pro ADMIN úpravu časů docházky
+# Admin - změna času
 @app.route('/api/update_time', methods=['POST'])
 def update_time():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Nepovolený přístup'}), 403
-
     data = request.get_json()
-    username = data.get('username')
-    date = data.get('date')
-    in_time = data.get('in_time')
-    out_time = data.get('out_time')
-
-    db = get_db()
-    if in_time:
-        db.execute(
-            'UPDATE dochazka SET in_time = ? WHERE username = ? AND date = ?',
-            (in_time, username, date))
-    if out_time:
-        db.execute(
-            'UPDATE dochazka SET out_time = ? WHERE username = ? AND date = ?',
-            (out_time, username, date))
-    db.commit()
-
-    return jsonify({'success': True})
+    username = data['username']
+    date = data['date']
+    in_time = data['in_time']
+    out_time = data['out_time']
+    place = data['place']
+    note = data['note']
+    record = Dochazka.query.filter_by(username=username, date=date).first()
+    if record:
+        record.in_time = in_time
+        record.out_time = out_time
+        record.place = place
+        record.note = note
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Záznam nenalezen'}), 404
 
 
-# API pro ADMIN změnu stavu docházky
+# Admin - změna stavu
 @app.route('/api/zmenit_stav', methods=['POST'])
 def zmenit_stav():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Nepovolený přístup'}), 403
-
     data = request.get_json()
-    username = data.get('username')
-    date = data.get('date')
-    new_status = data.get('status')
-
-    db = get_db()
-    db.execute(
-        'UPDATE dochazka SET status = ? WHERE username = ? AND date = ?',
-        (new_status, username, date))
-    db.commit()
-
-    return jsonify({'success': True})
+    username = data['username']
+    date = data['date']
+    status = data['status']
+    record = Dochazka.query.filter_by(username=username, date=date).first()
+    if record:
+        record.status = status
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Záznam nenalezen'}), 404
 
 
-# API pro ADMIN smazání záznamu
+# Admin - smazání záznamu
 @app.route('/api/smazat_zaznam', methods=['POST'])
 def smazat_zaznam():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Nepovolený přístup'}), 403
-
     data = request.get_json()
-    username = data.get('username')
-    date = data.get('date')
+    username = data['username']
+    date = data['date']
+    record = Dochazka.query.filter_by(username=username, date=date).first()
+    if record:
+        db.session.delete(record)
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Záznam nenalezen'}), 404
 
-    db = get_db()
-    db.execute('DELETE FROM dochazka WHERE username = ? AND date = ?',
-               (username, date))
-    db.commit()
-
-    return jsonify({'success': True})
-
-
-# API pro ADMIN schválení záznamu
+# Admin – schválení docházky
 @app.route('/api/schvalit', methods=['POST'])
-def api_schvalit():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Přístup zamítnut'}), 403
-
+def schvalit_dochazku():
     data = request.get_json()
+    date = data.get('date')
     username = data.get('username')
-    date = data.get('date')
 
-    db = get_db()
-    db.execute(
-        '''
-        UPDATE dochazka
-        SET status = 'Schváleno'
-        WHERE username = ? AND date = ?
-    ''', (username, date))
-    db.commit()
+    if not date or not username:
+        return jsonify({'error': 'Neplatné vstupní údaje'}), 400
 
-    return jsonify({'success': True})
+    dochazka = Dochazka.query.filter_by(date=date, username=username).first()
+
+    if not dochazka:
+        return jsonify({'error': 'Záznam nenalezen'}), 404
+
+    if dochazka.status == 'Proplaceno':
+        return jsonify({'error': 'Záznam již byl proplacen'}), 400
+
+    dochazka.status = 'Schváleno'
+    db.session.commit()
+
+    return jsonify({'message': 'Záznam úspěšně schválen'}), 200
 
 
-# API pro schválení celého dne
+# Admin - schválení všech záznamů v daný den
 @app.route('/api/schvalit_den', methods=['POST'])
-def api_schvalit_den():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Přístup zamítnut'}), 403
-
+def schvalit_den():
     data = request.get_json()
-    date = data.get('date')
-
-    db = get_db()
-    db.execute(
-        '''
-        UPDATE dochazka
-        SET status = 'Schváleno'
-        WHERE date = ?
-    ''', (date, ))
-    db.commit()
-
+    date_str = data['date']
+    dochazky = Dochazka.query.filter_by(date=date_str).all()
+    for d in dochazky:
+        if d.status != 'Proplaceno':
+            d.status = 'Schváleno'
+    db.session.commit()
     return jsonify({'success': True})
 
-
-# Konec API pro admin docházku
+# Konec admin docházky
 #__________________________________________________________________________________________
 
 
@@ -809,83 +786,107 @@ def admin_zamestnanec_detail(username):
         }
     })
 
+#___________________________________________________________________________________________
+# Docházka – vše co se týká dochazka.html
 
-# Docházka
-@app.route('/api/dochazka', methods=['GET'])
+# Otevření Docházka.html
+@app.route('/dochazka')
+def dochazka():
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    if session.get('is_admin'):
+        return render_template('admin_dochazka.html',
+                               username=session['username'])
+    return render_template('dochazka.html', username=session['username'])
+
+# Docházka – zobrazení všech záznamů přihlášeného uživatele
+@app.route('/api/dochazka')
 def get_dochazka():
-    if 'username' not in session:
+    username = session.get('username')
+    if not username:
         return jsonify([])
-    db = get_db()
-    rows = db.execute(
-        'SELECT date, in_time, out_time, status, place, note FROM dochazka WHERE username = ?',
-        (session['username'], )).fetchall()
 
-    return jsonify([dict(row) for row in rows])
+    zaznamy = Dochazka.query.filter_by(username=username).all()
+    data = []
+    for z in zaznamy:
+        # Vynecháme záznamy bez in_time nebo out_time
+        if not z.date or not z.in_time or not z.out_time:
+            continue
 
+        data.append({
+            'id': z.id,
+            'title': z.place or '',
+            'start': f"{z.date}T{z.in_time}",
+            'end': f"{z.date}T{z.out_time}",
+            'date': z.date,
+            'in_time': z.in_time,
+            'out_time': z.out_time,
+            'status': z.status,
+            'place': z.place,
+            'note': z.note
+        })
+    return jsonify(data)
 
-# Funkce pro uložení docházky
+# ✅ Vytvoření nové docházky
 @app.route('/api/dochazka', methods=['POST'])
-def save_dochazka():
-    if 'username' not in session:
-        return jsonify({'success': False}), 403
+def create_dochazka():
     data = request.get_json()
-    username = session['username']
-    date = data['date']
-    in_time = data['in_time']
-    out_time = data['out_time']
-    place = data.get('place', '')
-    note = data.get('note', '')
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Nepřihlášený uživatel'}), 401
 
-    status = data.get('status') or 'Čeká na schválení'
-    db = get_db()
-    cur = db.execute('SELECT id FROM dochazka WHERE username=? AND date=?',
-                     (username, date))
-    existing = cur.fetchone()
-    if existing:
-        db.execute(
-            'UPDATE dochazka SET in_time = ?, out_time = ?, place = ?, note = ? WHERE username = ? AND date = ?',
-            (in_time, out_time, place, note, session['username'], date))
-
-    else:
-        db.execute(
-            '''
-            INSERT INTO dochazka (username, date, in_time, out_time, status, place, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (session['username'], date, in_time, out_time,
-              'Čeká na schválení', place, note))
-
-    db.commit()
-    return jsonify({'success': True})
+    new_record = Dochazka(
+        username=username,
+        date=data['date'],
+        in_time=data.get('in_time'),
+        out_time=data.get('out_time'),
+        place=data.get('place'),
+        note=data.get('note'),
+        status='Čeká na schválení'
+    )
+    db.session.add(new_record)
+    db.session.commit()
+    return jsonify({'message': 'Docházka vytvořena'}), 201
 
 
-# Funkce pro úpravu docházky - v zaměstnaneckm rozhraní
+# ✅ Úprava existující docházky
 @app.route('/api/dochazka', methods=['PATCH'])
 def update_dochazka():
     data = request.get_json()
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Nepřihlášený uživatel'}), 401
 
-    original_date = data.get('original_date')
-    in_time = data.get('in_time')
-    out_time = data.get('out_time')
-    place = data.get('place')
-    note = data.get('note')
+    record = Dochazka.query.filter_by(id=data['id'], username=username).first_or_404()
 
-    if not original_date:
-        return jsonify({'error': 'Chybí datum záznamu'}), 400
+    if record.status != 'Čeká na schválení':
+        return jsonify({'error': 'Docházku nelze upravit, protože již byla schválena nebo proplacena.'}), 403
 
-    conn = sqlite3.connect('dochazka.db')
-    c = conn.cursor()
+    record.in_time = data.get('in_time') or record.in_time
+    record.out_time = data.get('out_time') or record.out_time
+    record.place = data.get('place') or record.place
+    record.note = data.get('note') or record.note
+    db.session.commit()
+    return jsonify({'message': 'Docházka upravena'})
 
-    c.execute(
-        '''
-        UPDATE dochazka
-        SET in_time = ?, out_time = ?, place = ?, note = ?
-        WHERE date = ?
-    ''', (in_time, out_time, place, note, original_date))
 
-    conn.commit()
-    conn.close()
+# ✅ Smazání docházky podle ID
+@app.route('/api/dochazka', methods=['DELETE'])
+def delete_dochazka():
+    data = request.get_json()
+    username = session.get('username')
+    if not username:
+        return jsonify({'error': 'Nepřihlášený uživatel'}), 401
 
-    return jsonify({'message': 'Záznam byl úspěšně upraven'}), 200
+    record = Dochazka.query.filter_by(id=data['id'], username=username).first_or_404()
+    db.session.delete(record)
+    db.session.commit()
+    return jsonify({'message': 'Docházka smazána'})
+
+# Konec všeho co se týká dochazka.html
+#______________________________________________________________________________________________
+# Výplaty – vše co se týká admin_vyplaty.html
+
 
 
 # Otevření admin výplat -> html souboru
@@ -1089,45 +1090,7 @@ def delete_vyplata():
     return jsonify({'success': True})
 
 
-# Inicializace DB
-def init_db():
-    with app.app_context():
-        db = get_db()
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS dochazka (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL,
-                date TEXT NOT NULL,
-                in_time TEXT,
-                out_time TEXT,
-                status TEXT
-            )
-        ''')
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                first_name TEXT,
-                last_name TEXT,
-                note TEXT,
-                job_location TEXT,
-                is_admin INTEGER NOT NULL DEFAULT 0,
-                hourly_rate REAL
-            )
-        ''')
-        # Výchozí admin účty
-        db.execute(
-            "INSERT OR IGNORE INTO users (username, password, first_name, last_name, is_admin, job_location, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, NULL)",
-            ('admin1', 'adminheslo1', 'Jan', 'Novák', 1, 'Big Boss'))
-        db.execute(
-            "INSERT OR IGNORE INTO users (username, password, first_name, last_name, is_admin, job_location, hourly_rate) VALUES (?, ?, ?, ?, ?, ?, NULL)",
-            ('admin2', 'adminheslo2', 'Petr', 'Svoboda', 1, 'Big Boss'))
-        db.commit()
-
-
-# Pro první spuštění odkomentovat:
-#init_db()
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=3001, debug=True)
+    app.run(debug=True)
+

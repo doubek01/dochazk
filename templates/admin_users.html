@@ -40,9 +40,14 @@
 
   <div class="container py-4">
     <h1 class="mb-4">Správa uživatelů</h1>
-    {% if error %}
-      <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
 
     <button class="btn btn-success mb-3" onclick="toggleForm()">Přidat nového uživatele</button>
 
@@ -115,7 +120,7 @@
         <tr id="cred-{{ user.id }}" style="display: none;">
           <td colspan="7">
             <strong>Uživatelské jméno:</strong> {{ user.username }}<br>
-            <strong>Heslo:</strong> {{ user.password }}
+            <em>Heslo nelze zobrazit – změň ho přes tlačítko „Upravit“.</em>
           </td>
         </tr>
         {% endfor %}

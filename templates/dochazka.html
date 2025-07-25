@@ -99,7 +99,8 @@
             <label for="modalStatus" class="form-label">Stav</label>
             <span id="modalStatus" class="form-control badge-status"></span>
           </div>
-          <div class="d-flex justify-content-end">
+          <div class="d-flex justify-content-between">
+            <button id="deleteBtn" class="btn btn-sm btn-outline-danger">🗑️ Smazat</button>
             <button id="editBtn" class="btn btn-sm btn-outline-primary">✏️ Upravit</button>
           </div>
         </div>
@@ -165,7 +166,7 @@
   <script>
     let DOCHAZKA = [];
     let latestClickedDate = null;
-
+    let selectedRecord = null;
     let modalBodyOriginalHTML;
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -185,8 +186,7 @@
     }
 
     function showModalForDate(dateStr) {
-      
-
+      selectedRecord = DOCHAZKA.find(r => r.date === dateStr);  // <-- NOVÝ ŘÁDEK
       document.getElementById('attendanceModal').querySelector('.modal-body').innerHTML = modalBodyOriginalHTML;
       const record = DOCHAZKA.find(r => r.date === dateStr);
       if (!record) return;
@@ -205,7 +205,13 @@
       else if (record.status === 'Schváleno') statusEl.classList.add('status-approved');
       else if (record.status === 'Proplaceno') statusEl.classList.add('status-paid');
 
-      document.getElementById('editBtn').classList.remove('d-none');
+      if (record.status === 'Čeká na schválení') {
+        document.getElementById('editBtn').classList.remove('d-none');
+        document.getElementById('deleteBtn').classList.remove('d-none');
+      } else {
+        document.getElementById('editBtn').classList.add('d-none');
+        document.getElementById('deleteBtn').classList.add('d-none');
+      }
       const saveBtn = document.getElementById('saveEditBtn');
       if (saveBtn) saveBtn.remove();
 
@@ -286,15 +292,16 @@
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                original_date: originalDate,
-                date: originalDate,
-                in_time: newIn,
-                out_time: newOut,
-                place: newPlace,
-                note: newNote
+                id: selectedRecord.id,
+                in_time: document.getElementById('modalInTimeInput').value,
+                out_time: document.getElementById('modalOutTimeInput').value,
+                place: (document.getElementById('modalPlaceSelect').value === 'Jiné'
+                  ? document.getElementById('modalPlaceCustom').value.trim()
+                  : document.getElementById('modalPlaceSelect').value),
+                note: document.getElementById('modalNoteInput').value
               })
             });
-
+            showToast('Docházka upravena');
             bootstrap.Modal.getInstance(modalEl).hide();
           };
           btnWrapper.appendChild(saveBtn);
@@ -309,18 +316,24 @@
 
 
     async function loadDochazka() {
-      const res = await fetch('/api/dochazka');
-      const data = await res.json();
-      DOCHAZKA = data.map(r => ({
-        date: r.date,
-        in_time: r.in_time,
-        out_time: r.out_time,
-        status: r.status,
-        place: r.place,
-        note: r.note
-      }));
-      calendar.refetchEvents();
-    }
+  try {
+    const res = await fetch('/api/dochazka');
+    const data = await res.json();
+    DOCHAZKA = data.map(r => ({
+      id: r.id,  // ← DOPLNIT TOTO!
+      date: r.date,
+      in_time: r.in_time,
+      out_time: r.out_time,
+      status: r.status,
+      place: r.place,
+      note: r.note
+    }));
+    calendar.refetchEvents();  // ← tohle už tam je správně!
+    console.log('Načteno z /api/dochazka:', DOCHAZKA);
+  } catch (err) {
+    console.error('Chyba při načítání docházky:', err);
+  }
+}
 
     let calendar;
     document.addEventListener('DOMContentLoaded', async function () {
@@ -421,7 +434,7 @@
             note: newNote
           })
         });
-
+        showToast('Nová docházka přidána');
         modal.hide();
         await loadDochazka();  // obnov kalendář
       };
@@ -430,6 +443,48 @@
     }
 
   </script>
+  <script>
+  // Přidej posluchač na DELETE
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('attendanceModal').addEventListener('show.bs.modal', () => {
+      const deleteBtn = document.getElementById('deleteBtn');
+      if (deleteBtn) {
+        deleteBtn.onclick = async function () {
+          if (!confirm('Opravdu chceš smazat tento záznam?')) return;
+          await fetch('/api/dochazka', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: selectedRecord.id })
+          });
+          const modalEl = document.getElementById('attendanceModal');
+          showToast('Docházka smazána');
+          bootstrap.Modal.getInstance(modalEl).hide();
+          await loadDochazka();
+        };
+      }
+    });
+  });
+  
+</script>
+
+<!-- Toast notifikace -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+  <div id="actionToast" class="toast align-items-center text-bg-success border-0" role="alert">
+    <div class="d-flex">
+      <div class="toast-body" id="toastMessage">✅ Hotovo</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+<script>
+function showToast(message) {
+  const toastEl = document.getElementById('actionToast');
+  const toastBody = document.getElementById('toastMessage');
+  toastBody.textContent = message;
+  const toast = new bootstrap.Toast(toastEl);
+  toast.show();
+}
+</script>
 
 </body>
 </html>

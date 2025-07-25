@@ -23,6 +23,16 @@
   <div class="d-flex justify-content-center align-items-center min-vh-100">
     <div class="login-card">
       <h2 class="text-center mb-4">Přihlášení</h2>
+
+      <!-- FLASH ZPRÁVY -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
       <form method="post" action="/login">
         <div class="mb-3">
           <label for="username" class="form-label">Uživatelské jméno</label>
