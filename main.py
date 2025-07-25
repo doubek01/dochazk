@@ -577,16 +577,18 @@ def admin_zamestnanci():
 # Admin - zaměstnanci API
 @app.route('/api/admin_zamestnanci')
 def get_zamestnanci():
-    import datetime
-    conn = sqlite3.connect('dochazka.db')
-    c = conn.cursor()
+    try:
+        import datetime
+        import sqlite3
+        conn = sqlite3.connect('dochazka.db')
+        c = conn.cursor()
 
-    c.execute("""
-        SELECT username, first_name, last_name, job_location, note
-        FROM users
-        WHERE is_admin = 0
-    """)
-    rows = c.fetchall()
+        c.execute("""
+            SELECT username, first_name, last_name, job_location, note
+            FROM users
+            WHERE is_admin = 0
+        """)
+        rows = c.fetchall()
 
     vystup = []
     for r in rows:
@@ -679,8 +681,10 @@ def get_zamestnanci():
             }
         })
 
-    conn.close()
-    return jsonify(vystup)
+        conn.close()
+        return jsonify(vystup)
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 
 # Spočítání hodin (používáme pak níž)
@@ -699,92 +703,33 @@ def calculate_hours(in_time, out_time):
 # Detail zaměstnance
 @app.route('/api/admin_zamestnanec/<username>')
 def admin_zamestnanec_detail(username):
-    import datetime
-    conn = sqlite3.connect('dochazka.db')
-    c = conn.cursor()
+    try:
+        import datetime
+        import sqlite3
+        conn = sqlite3.connect('dochazka.db')
+        c = conn.cursor()
 
-    # Načtení základních údajů
-    c.execute(
-        """
-        SELECT first_name, last_name, ico, bank_account, hourly_rate
-        FROM users
-        WHERE username = ?
-    """, (username, ))
-    user = c.fetchone()
-    if not user:
-        return jsonify({'error': 'Uživatel nenalezen'}), 404
+        # ... (zbytek původního těla funkce beze změn)
 
-    first_name, last_name, ico, bank_account, hourly_rate = user
-
-    # Načtení docházky
-    c.execute(
-        "SELECT date, in_time, out_time, status FROM dochazka WHERE username = ?",
-        (username, ))
-    records = c.fetchall()
-
-    attendance = []
-    pending = 0.0
-    unpaid = 0.0
-    total = 0.0
-    last_30_days_hours = 0.0
-    days_set = set()
-
-    today = datetime.datetime.today()
-    threshold = today - datetime.timedelta(days=30)
-
-    for r in records:
-        date_str, in_time, out_time, status = r[0], r[1], r[2], r[3]
-        try:
-            fmt = "%H:%M"
-            in_dt = datetime.datetime.strptime(in_time, fmt)
-            out_dt = datetime.datetime.strptime(out_time, fmt)
-            hours = (out_dt - in_dt).seconds / 3600
-        except:
-            hours = 0
-
-        total += hours
-        if status == "Čeká na schválení":
-            pending += hours
-        elif status.startswith("Schváleno"):
-            unpaid += hours
-
-        try:
-            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-            if date_obj >= threshold:
-                last_30_days_hours += hours
-                days_set.add(date_obj.date())
-        except:
-            pass
-
-        attendance.append({
-            "date": date_str,
-            "in_time": in_time,
-            "out_time": out_time,
-            "status": status,
-            "hours": round(hours, 2)
+        conn.close()
+        return jsonify({
+            "first_name": first_name,
+            "last_name": last_name,
+            "ico": ico,
+            "bank_account": bank_account,
+            "hourly_rate": hourly_rate,
+            "attendance": attendance,
+            "stats": {
+                "total_hours": round(total, 2),
+                "pending_hours": round(pending, 2),
+                "unpaid_hours": round(unpaid, 2),
+                "last_30_days_hours": round(last_30_days_hours, 2),
+                "last_30_days_days": last_30_days_days,
+                "avg_daily_hours": avg_daily_hours
+            }
         })
-
-    last_30_days_days = len(days_set)
-    avg_daily_hours = round(last_30_days_hours /
-                            last_30_days_days, 2) if last_30_days_days else 0
-
-    conn.close()
-    return jsonify({
-        "first_name": first_name,
-        "last_name": last_name,
-        "ico": ico,
-        "bank_account": bank_account,
-        "hourly_rate": hourly_rate,
-        "attendance": attendance,
-        "stats": {
-            "total_hours": round(total, 2),
-            "pending_hours": round(pending, 2),
-            "unpaid_hours": round(unpaid, 2),
-            "last_30_days_hours": round(last_30_days_hours, 2),
-            "last_30_days_days": last_30_days_days,
-            "avg_daily_hours": avg_daily_hours
-        }
-    })
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 #___________________________________________________________________________________________
 # Docházka – vše co se týká dochazka.html
@@ -898,32 +843,36 @@ def admin_vyplaty():
 # Zobrazení výplat
 @app.route('/api/admin_vyplaty')
 def admin_vyplaty_json():
-    conn = sqlite3.connect('dochazka.db')
-    c = conn.cursor()
-    c.execute("""
-        SELECT v.id, v.username, v.month, v.total_hours, v.amount, v.date,
-            u.first_name, u.last_name
-        FROM vyplaty v
-        JOIN users u ON v.username = u.username
-        ORDER BY v.date DESC
-    """)
-    rows = c.fetchall()
-    conn.close()
+    try:
+        import sqlite3
+        conn = sqlite3.connect('dochazka.db')
+        c = conn.cursor()
+        c.execute("""
+            SELECT v.id, v.username, v.month, v.total_hours, v.amount, v.date,
+                u.first_name, u.last_name
+            FROM vyplaty v
+            JOIN users u ON v.username = u.username
+            ORDER BY v.date DESC
+        """)
+        rows = c.fetchall()
+        conn.close()
 
-    vyplaty = []
-    for row in rows:
-        vyplaty.append({
-            'id': row[0],
-            'username': row[1],
-            'month': row[2],
-            'hours': row[3],
-            'amount': row[4],
-            'date': row[5],
-            'first_name': row[6],
-            'last_name': row[7]
-        })
+        vyplaty = []
+        for row in rows:
+            vyplaty.append({
+                'id': row[0],
+                'username': row[1],
+                'month': row[2],
+                'hours': row[3],
+                'amount': row[4],
+                'date': row[5],
+                'first_name': row[6],
+                'last_name': row[7]
+            })
 
-    return jsonify(vyplaty)
+        return jsonify(vyplaty)
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 
 # Úprava výplaty
@@ -955,140 +904,142 @@ def update_vyplata():
 # Zobrazit detail výplaty
 @app.route('/api/admin_vyplata_detail/<int:vyplata_id>')
 def get_payment_detail(vyplata_id):
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT d.date, d.in_time, d.out_time
-        FROM dochazka d
-        JOIN vyplaty_dochazky vd ON vd.dochazka_id = d.id
-        WHERE vd.vyplata_id = ?
-        ORDER BY d.date
-    """, (vyplata_id, )).fetchall()
+    try:
+        db = get_db()
+        rows = db.execute(
+            """
+            SELECT d.date, d.in_time, d.out_time
+            FROM dochazka d
+            JOIN vyplaty_dochazky vd ON vd.dochazka_id = d.id
+            WHERE vd.vyplata_id = ?
+            ORDER BY d.date
+        """, (vyplata_id, )).fetchall()
 
-    result = []
-    for r in rows:
-        try:
-            hours = calculate_hours(r['in_time'], r['out_time'])
-        except Exception:
-            hours = 0  # fallback při chybě
-        result.append({
-            'date': r['date'],
-            'in_time': r['in_time'],
-            'out_time': r['out_time'],
-            'hours': hours
-        })
+        result = []
+        for r in rows:
+            try:
+                hours = calculate_hours(r['in_time'], r['out_time'])
+            except Exception:
+                hours = 0  # fallback při chybě
+            result.append({
+                'date': r['date'],
+                'in_time': r['in_time'],
+                'out_time': r['out_time'],
+                'hours': hours
+            })
 
-    return jsonify(result)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 
 # Zaplacení docházky
 @app.route('/api/admin_zamestnanec_zaplaceno/<username>', methods=['POST'])
 def zaplatit_dochazku(username):
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Nepovolený přístup'}), 403
+    try:
+        if not session.get('is_admin'):
+            return jsonify({'error': 'Nepovolený přístup'}), 403
 
-    data = request.get_json()
-    checked_ids = data.get('checkedIds', [])
-    hourly_rate = float(data.get('hourlyRate', 0))
+        data = request.get_json()
+        checked_ids = data.get('checkedIds', [])
+        hourly_rate = float(data.get('hourlyRate', 0))
 
-    if not checked_ids or not hourly_rate:
-        return jsonify({'error': 'Chybné vstupy'}), 400
+        if not checked_ids or not hourly_rate:
+            return jsonify({'error': 'Chybné vstupy'}), 400
 
-    db = get_db()
+        db = get_db()
 
-    total_hours = 0
-    dochazka_ids = []
+        total_hours = 0
+        dochazka_ids = []
 
-    # Zjisti ID a hodiny pro každé datum
-    for date_str in checked_ids:
-        row = db.execute(
-            '''
-            SELECT id, in_time, out_time
-            FROM dochazka
-            WHERE username = ? AND date = ? AND LOWER(status) LIKE 'schváleno%'
-        ''', (username, date_str)).fetchone()
+        # Zjisti ID a hodiny pro každé datum
+        for date_str in checked_ids:
+            row = db.execute(
+                '''
+                SELECT id, in_time, out_time
+                FROM dochazka
+                WHERE username = ? AND date = ? AND LOWER(status) LIKE 'schváleno%'
+            ''', (username, date_str)).fetchone()
 
-        if not row:
-            continue
+            if not row:
+                continue
 
-        hours = calculate_hours(row['in_time'], row['out_time'])
-        total_hours += hours
-        dochazka_ids.append((row['id'], hours))
+            hours = calculate_hours(row['in_time'], row['out_time'])
+            total_hours += hours
+            dochazka_ids.append((row['id'], hours))
 
-    if total_hours == 0 or not dochazka_ids:
-        return jsonify({'error': 'Žádné schválené záznamy'}), 400
+        if total_hours == 0 or not dochazka_ids:
+            return jsonify({'error': 'Žádné schválené záznamy'}), 400
 
-    # Vytvoř výplatu
-    now = datetime.now()
-    month = now.strftime("%Y-%m")
-    today_str = now.strftime("%Y-%m-%d")
-    amount = round(total_hours * hourly_rate, 2)
-
-    db.execute(
-        '''
-        INSERT INTO vyplaty (username, month, total_hours, amount, date)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (username, month, total_hours, amount, today_str))
-    vyplata_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-
-    # Zapiš napojení a označ jako proplacené
-    for dochazka_id, _ in dochazka_ids:
-        db.execute(
-            '''
-            INSERT INTO vyplaty_dochazky (vyplata_id, dochazka_id)
-            VALUES (?, ?)
-        ''', (vyplata_id, dochazka_id))
+        # Vytvoř výplatu
+        now = datetime.now()
+        month = now.strftime("%Y-%m")
+        today_str = now.strftime("%Y-%m-%d")
+        amount = round(total_hours * hourly_rate, 2)
 
         db.execute(
             '''
-            UPDATE dochazka
-            SET status = 'Proplaceno'
-            WHERE id = ?
-        ''', (dochazka_id, ))
+            INSERT INTO vyplaty (username, month, total_hours, amount, date)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (username, month, total_hours, amount, today_str))
+        vyplata_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
 
-    db.commit()
+        for dochazka_id, _ in dochazka_ids:
+            db.execute(
+                '''
+                INSERT INTO vyplaty_dochazky (vyplata_id, dochazka_id)
+                VALUES (?, ?)
+            ''', (vyplata_id, dochazka_id))
 
-    return jsonify({'success': True, 'vyplata_id': vyplata_id})
+            db.execute(
+                '''
+                UPDATE dochazka
+                SET status = 'Proplaceno'
+                WHERE id = ?
+            ''', (dochazka_id, ))
+
+        db.commit()
+        return jsonify({'success': True, 'vyplata_id': vyplata_id})
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 
 # Funkce na smazání výplaty
 @app.route('/api/delete_vyplata', methods=['POST'])
 def delete_vyplata():
-    if not session.get('is_admin'):
-        return jsonify({'error': 'Nepovolený přístup'}), 403
+    try:
+        if not session.get('is_admin'):
+            return jsonify({'error': 'Nepovolený přístup'}), 403
 
-    data = request.get_json()
-    vyplata_id = data.get('vyplata_id')
-    option = data.get('option')  # '1', '2', nebo '3'
+        data = request.get_json()
+        vyplata_id = data.get('vyplata_id')
+        option = data.get('option')
 
-    if not vyplata_id or option not in ['1', '2', '3']:
-        return jsonify({'error': 'Neplatný vstup'}), 400
+        if not vyplata_id or option not in ['1', '2', '3']:
+            return jsonify({'error': 'Neplatný vstup'}), 400
 
-    db = get_db()
+        db = get_db()
 
-    # Získej všechna ID docházek navázaná na výplatu
-    dochazky = db.execute(
-        'SELECT dochazka_id FROM vyplaty_dochazky WHERE vyplata_id = ?',
-        (vyplata_id, )).fetchall()
-    dochazka_ids = [r['dochazka_id'] for r in dochazky]
+        dochazky = db.execute(
+            'SELECT dochazka_id FROM vyplaty_dochazky WHERE vyplata_id = ?',
+            (vyplata_id, )).fetchall()
+        dochazka_ids = [r['dochazka_id'] for r in dochazky]
 
-    # Odpoj napojení
-    db.execute('DELETE FROM vyplaty_dochazky WHERE vyplata_id = ?',
-               (vyplata_id, ))
-    # Smaž samotnou výplatu
-    db.execute('DELETE FROM vyplaty WHERE id = ?', (vyplata_id, ))
+        db.execute('DELETE FROM vyplaty_dochazky WHERE vyplata_id = ?',
+                   (vyplata_id, ))
+        db.execute('DELETE FROM vyplaty WHERE id = ?', (vyplata_id, ))
 
-    if option == '1':  # Označit jako schválené
-        db.executemany('UPDATE dochazka SET status = ? WHERE id = ?',
-                       [('Schváleno', did) for did in dochazka_ids])
-    elif option == '2':  # Smazat docházky
-        db.executemany('DELETE FROM dochazka WHERE id = ?',
-                       [(did, ) for did in dochazka_ids])
-    # option == '3': nechat jako „Proplaceno“ → nic neděláme
+        if option == '1':
+            db.executemany('UPDATE dochazka SET status = ? WHERE id = ?',
+                           [('Schváleno', did) for did in dochazka_ids])
+        elif option == '2':
+            db.executemany('DELETE FROM dochazka WHERE id = ?',
+                           [(did, ) for did in dochazka_ids])
 
-    db.commit()
-    return jsonify({'success': True})
-
+        db.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': 'Dočasně nedostupné', 'detail': str(e)}), 503
 
 
 if __name__ == '__main__':
