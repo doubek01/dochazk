@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: dochazkova-aplikace
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn main:app"
-    pythonVersion: 3.10.13

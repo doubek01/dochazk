@@ -13,6 +13,9 @@ class User(db.Model):
     note = db.Column(db.String)               # musí tam být
     job_location = db.Column(db.String)       # musí tam být
     hourly_rate = db.Column(db.Float)         # musí tam být
+    ico = db.Column(db.String(20))
+    bank_account = db.Column(db.String(50))
+
 
 class Dochazka(db.Model):
     __tablename__ = 'dochazka'
@@ -28,13 +31,12 @@ class Dochazka(db.Model):
 class Vyplata(db.Model):
     __tablename__ = 'vyplaty'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), nullable=False)
-    od_datum = db.Column(db.String(10), nullable=False)
-    do_datum = db.Column(db.String(10), nullable=False)
-    celkem_hodin = db.Column(db.Float)
-    sazba = db.Column(db.Float)
-    celkem_castka = db.Column(db.Float)
-    zaplaceno = db.Column(db.Boolean, default=False)
+    username = db.Column(db.String, db.ForeignKey('users.username'))
+    total_hours = db.Column(db.Float)
+    amount = db.Column(db.Float)
+    date = db.Column(db.String)  # nebo db.Date
+    month = db.Column(db.String(7))  # <== Tohle je důležité
+
 
 class VyplataDochazky(db.Model):
     __tablename__ = 'vyplaty_dochazky'
