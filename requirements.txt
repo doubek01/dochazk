@@ -6,3 +6,4 @@ pytz
 bcrypt
 gunicorn
 psycopg2-binary
+rclone

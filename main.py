@@ -278,29 +278,28 @@ def muj_profil():
                            monthly_summary_list=monthly_summary_list)
 
 
-
+# Aktualizace dat v muj_profilu
 @app.route('/update_profile_data', methods=['POST'])
+@login_required
 def update_profile_data():
-    if 'username' not in session:
-        return jsonify({'success': False, 'error': 'Nejste přihlášen'}), 403
-
     data = request.get_json()
     bank_account = data.get('bank_account', '').strip()
     ico = data.get('ico', '').strip()
 
-    db = get_db()
-    db.execute(
-        '''
-        UPDATE users
-        SET bank_account = ?, ico = ?
-        WHERE username = ?
-    ''', (bank_account or None, ico or None, session['username']))
-    db.commit()
+    user = User.query.filter_by(username=session['username']).first()
+    if not user:
+        return jsonify({'success': False, 'error': 'Uživatel nenalezen'}), 404
+
+    user.bank_account = bank_account or None
+    user.ico = ico or None
+    db.session.commit()
 
     return jsonify({'success': True})
 
 
+
 #Konec Muj profil
+#___________________________________________________________________________________________
 
 
 # Odhlášení
