@@ -5,3 +5,4 @@ python-dotenv
 pytz
 bcrypt
 gunicorn
+psycopg2-binary
