@@ -1,39 +1,59 @@
 import os
 import subprocess
 from datetime import datetime
+from urllib.parse import urlparse
+import sys
 
-# Vytvoř název souboru
-now = datetime.now().strftime("%Y-%m-%d_%H-%M")
-backup_file = f"backup_{now}.sql"
+# Získání DATABASE_URL z prostředí
+db_url = os.getenv("DATABASE_URL")
+if not db_url:
+    raise ValueError("DATABASE_URL není nastaven")
 
-# Vytvoř dočasný soubor s konfigurací rclone
-rclone_conf = os.environ.get("RCLONE_CONFIG")
-os.makedirs("temp_conf", exist_ok=True)
-with open("temp_conf/rclone.conf", "w") as f:
-    f.write(rclone_conf)
+# Parsování URL
+result = urlparse(db_url)
 
-# Vytvoř zálohu PostgreSQL databáze
-pg_user = os.environ.get("PGUSER", "postgres")
-pg_host = os.environ.get("PGHOST")
-pg_port = os.environ.get("PGPORT", "5432")
-pg_db = os.environ.get("PGDATABASE")
-pg_password = os.environ.get("PGPASSWORD")
+pg_user = result.username
+pg_password = result.password or os.getenv("PGPASSWORD", "")
+pg_host = result.hostname
+pg_port = result.port or "5432"
+pg_db = result.path.lstrip('/')
 
+if not all([pg_user, pg_password, pg_host, pg_port, pg_db]):
+    print("Chyba: Některá z hodnot připojení k databázi chybí.")
+    sys.exit(1)
+
+# Název souboru pro zálohu
+timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+backup_filename = f"backup_{timestamp}.sql"
+
+# Cesta k výstupnímu souboru
+backup_path = os.path.join(os.getcwd(), backup_filename)
+
+# Příkaz k dumpu databáze
 os.environ["PGPASSWORD"] = pg_password
-
-subprocess.run([
+command = [
     "pg_dump",
     "-h", pg_host,
-    "-p", pg_port,
+    "-p", str(pg_port),
     "-U", pg_user,
     "-d", pg_db,
-    "-f", backup_file
-], check=True)
+    "-F", "c",  # custom format – rychlejší a menší
+    "-f", backup_path
+]
 
-# Nahraj na Google Drive pomocí rclone
-subprocess.run([
-    "rclone", "--config=temp_conf/rclone.conf",
-    "copy", backup_file, "gdrive:railway_backups"
-], check=True)
+# Spuštění dumpu
+try:
+    subprocess.run(command, check=True)
+    print(f"Záloha databáze vytvořena: {backup_path}")
+except subprocess.CalledProcessError as e:
+    print(f"Chyba při záloze databáze: {e}")
+    sys.exit(1)
 
-print("✅ Záloha hotová a nahraná!")
+# Upload na Google Drive přes rclone
+gdrive_target = "gdrive:backupy_dochazka"
+try:
+    subprocess.run(["rclone", "copy", backup_path, gdrive_target], check=True)
+    print("Záloha úspěšně nahrána na Google Drive.")
+except subprocess.CalledProcessError as e:
+    print(f"Chyba při nahrávání na Google Drive: {e}")
+    sys.exit(1)
