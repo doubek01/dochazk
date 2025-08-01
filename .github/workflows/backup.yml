@@ -1,0 +1,31 @@
+name: Daily DB Backup
+
+on:
+  schedule:
+    - cron: '0 5 * * *'       # každý den v 5:00 UTC (7:00 českého času)
+  workflow_dispatch:          # volitelné ruční spuštění
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backup script
+        env:
+          RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python backup.py
