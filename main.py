@@ -590,96 +590,96 @@ def get_zamestnanci():
         """)
         rows = c.fetchall()
 
-    vystup = []
-    for r in rows:
-        username = r[0]
-        first_name = r[1]
-        last_name = r[2]
-        job_location = r[3] or ""
-        note = r[4] or ""
+        vystup = []
+        for r in rows:
+            username = r[0]
+            first_name = r[1]
+            last_name = r[2]
+            job_location = r[3] or ""
+            note = r[4] or ""
 
-        if job_location.strip() == "Brigádník":
-            typ_zavazku = "Brigádník"
-        elif job_location.strip() == "Stálý kopáč":
-            typ_zavazku = "Stálý kopáč"
-        else:
-            continue
+            if job_location.strip() == "Brigádník":
+                typ_zavazku = "Brigádník"
+            elif job_location.strip() == "Stálý kopáč":
+                typ_zavazku = "Stálý kopáč"
+            else:
+                continue
 
-        # Poslední platba
-        c.execute(
-            """
-            SELECT MAX(date)
-            FROM dochazka
-            WHERE username = ? AND status = 'Proplaceno'
-        """, (username, ))
-        last_payment_row = c.fetchone()
-        last_payment = last_payment_row[
-            0] if last_payment_row and last_payment_row[0] else None
+            # Poslední platba
+            c.execute(
+                """
+                SELECT MAX(date)
+                FROM dochazka
+                WHERE username = ? AND status = 'Proplaceno'
+            """, (username, ))
+            last_payment_row = c.fetchone()
+            last_payment = last_payment_row[
+                0] if last_payment_row and last_payment_row[0] else None
 
-        # Výpočet statistik
-        c.execute(
-            "SELECT in_time, out_time, date, status FROM dochazka WHERE username = ?",
-            (username, ))
-        records = c.fetchall()
+            # Výpočet statistik
+            c.execute(
+                "SELECT in_time, out_time, date, status FROM dochazka WHERE username = ?",
+                (username, ))
+            records = c.fetchall()
 
-        pending = 0.0
-        unpaid = 0.0
-        total = 0.0
-        last_30_days_hours = 0.0
-        days_set = set()
+            pending = 0.0
+            unpaid = 0.0
+            total = 0.0
+            last_30_days_hours = 0.0
+            days_set = set()
 
-        today = datetime.datetime.today()
-        threshold = today - datetime.timedelta(days=30)
+            today = datetime.datetime.today()
+            threshold = today - datetime.timedelta(days=30)
 
-        for rec in records:
-            in_time = rec[0] or ""
-            out_time = rec[1] or ""
-            date_str = rec[2]
-            status = rec[3]
+            for rec in records:
+                in_time = rec[0] or ""
+                out_time = rec[1] or ""
+                date_str = rec[2]
+                status = rec[3]
 
-            try:
-                fmt = "%H:%M"
-                in_dt = datetime.datetime.strptime(in_time, fmt)
-                out_dt = datetime.datetime.strptime(out_time, fmt)
-                hours = (out_dt - in_dt).seconds / 3600
-            except:
-                hours = 0
+                try:
+                    fmt = "%H:%M"
+                    in_dt = datetime.datetime.strptime(in_time, fmt)
+                    out_dt = datetime.datetime.strptime(out_time, fmt)
+                    hours = (out_dt - in_dt).seconds / 3600
+                except:
+                    hours = 0
 
-            total += hours
+                total += hours
 
-            if status == "Čeká na schválení":
-                pending += hours
-            elif status.startswith("Schváleno"):
-                unpaid += hours
+                if status == "Čeká na schválení":
+                    pending += hours
+                elif status.startswith("Schváleno"):
+                    unpaid += hours
 
-            try:
-                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-                if date_obj >= threshold:
-                    last_30_days_hours += hours
-                    days_set.add(date_obj.date())
-            except:
-                pass
+                try:
+                    date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                    if date_obj >= threshold:
+                        last_30_days_hours += hours
+                        days_set.add(date_obj.date())
+                except:
+                    pass
 
-        last_30_days_days = len(days_set)
-        avg_daily_hours = round(last_30_days_hours / last_30_days_days,
-                                2) if last_30_days_days else 0
+            last_30_days_days = len(days_set)
+            avg_daily_hours = round(last_30_days_hours / last_30_days_days,
+                                    2) if last_30_days_days else 0
 
-        vystup.append({
-            "username": username,
-            "first_name": first_name,
-            "last_name": last_name,
-            "typ_zavazku": typ_zavazku,
-            "stav": note.strip(),
-            "last_payment": last_payment,
-            "stats": {
-                "total_hours": round(total, 2),
-                "pending_hours": round(pending, 2),
-                "unpaid_hours": round(unpaid, 2),
-                "last_30_days_hours": round(last_30_days_hours, 2),
-                "last_30_days_days": last_30_days_days,
-                "avg_daily_hours": avg_daily_hours
-            }
-        })
+            vystup.append({
+                "username": username,
+                "first_name": first_name,
+                "last_name": last_name,
+                "typ_zavazku": typ_zavazku,
+                "stav": note.strip(),
+                "last_payment": last_payment,
+                "stats": {
+                    "total_hours": round(total, 2),
+                    "pending_hours": round(pending, 2),
+                    "unpaid_hours": round(unpaid, 2),
+                    "last_30_days_hours": round(last_30_days_hours, 2),
+                    "last_30_days_days": last_30_days_days,
+                    "avg_daily_hours": avg_daily_hours
+                }
+            })
 
         conn.close()
         return jsonify(vystup)
