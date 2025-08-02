@@ -6,6 +6,24 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
   <style>
+    #attendanceTable td {
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    #attendanceTable td:nth-child(6) {
+      max-width: 180px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    a.note-icon {
+      text-decoration: none;
+      font-size: 1em;
+      margin-left: 5px;
+      cursor: pointer;
+    }
+
     .badge-status {
       padding: 5px 10px;
       border-radius: 5px;
@@ -22,6 +40,32 @@
       padding: 20px;
       margin-top: 20px;
       background: #fff;
+    }
+    .badge-status {
+      padding: 4px 8px;
+      border-radius: 0.4rem;
+      font-size: 0.85em;
+      font-weight: 500;
+    }
+    .bg-place-benecko {
+      background-color: #ffcccb;
+      color: black;
+    }
+    .bg-place-náchod {
+      background-color: #cce5ff;
+      color: black;
+    }
+    .bg-place-poustevna {
+      background-color: #d4edda;
+      color: black;
+    }
+    .bg-place-trutnov {
+      background-color: #f3e5f5;
+      color: black;
+    }
+    .bg-place-nezadáno {
+      background-color: #e0e0e0;
+      color: black;
     }
   </style>
 </head>
@@ -106,13 +150,16 @@
           </div>
           <div class="mt-4">
             <h5>Docházka</h5>
-            <table id="attendanceTable" class="table table-sm table-bordered">
+            <table id="attendanceTable" class="table table-sm table-bordered align-middle text-center">
+
               <thead class="table-light">
                 <tr>
                   <th>Datum</th>
                   <th>Příchod</th>
                   <th>Odchod</th>
-                  <th>Hodin</th>
+                  <th>Počet hodin</th>
+                  <th>Místo</th>
+                  <th>Poznámka</th>
                   <th>Stav</th>
                   <th>Akce</th>
                 </tr>
@@ -205,6 +252,16 @@
             <td>${r.in_time}</td>
             <td>${r.out_time}</td>
             <td>${r.hours}</td>
+            <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
+            <td class="text-muted small">
+              ${
+                r.note
+                  ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                      <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
+                    </a>`
+                  : '<span class="text-muted">bez poznámky</span>'
+              }
+            </td>
             <td><span class="badge-status ${badge}">${r.status}</span></td>
             <td>
               <button class="btn btn-sm btn-outline-success" onclick="approve('${r.date}', '${selectedEmployee}')">Schválit</button>
@@ -443,6 +500,12 @@
       document.getElementById('totalPaymentInput').value = (totalHours * hourlyRate).toFixed(2);
     });
 
+    // Funkce na zobrazení celé poznámky
+    function showFullNote(note) {
+      document.getElementById('noteModalBody').innerText = note || '(bez poznámky)';
+      const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('noteModal'));
+      modal.show();
+    }
 
     
   </script>
@@ -578,6 +641,19 @@
             <button class="btn btn-success" onclick="paySelected()">Označit jako proplacené</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal na zobrazení celé poznámky -->
+  <div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Celá poznámka</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body" id="noteModalBody"></div>
       </div>
     </div>
   </div>
