@@ -5,6 +5,11 @@
   <title>Admin - Docházka</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+
   <link href="https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.8/index.global.min.css" rel="stylesheet">
   <style>
     #calendar {
@@ -89,6 +94,14 @@
       font-size: 0.9em;
       display: inline-block;
     }
+    .sort-icon {
+      font-size: 0.8em;
+      margin-left: 5px;
+    }
+    .text-underline {
+      text-decoration: underline;
+    }
+
   </style>
   
 </head>
@@ -112,18 +125,34 @@
     <div id="tableContainer" class="mt-4" style="display: none;">
       <h2>Přehled docházky (tabulka)</h2>
       <div class="table-responsive">
-        <input class="form-control mb-3" id="searchInput" placeholder="Filtruj podle jména nebo data...">
-        <table class="table table-bordered table-hover">
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <select class="form-select" id="placeFilter">
+              <option value="">Všechna místa</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <select class="form-select" id="employeeFilter">
+              <option value="">Všichni zaměstnanci</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <select class="form-select" id="monthFilter">
+              <option value="">Všechny měsíce</option>
+            </select>
+          </div>
+        </div>
+        <table id="dochazkaTable" class="table table-bordered table-hover">
           <thead class="table-light">
             <tr>
-              <th onclick="sortTable(0)">Datum</th>
-              <th onclick="sortTable(1)">Zaměstnanec</th>
-              <th>Příchod</th>
-              <th>Odchod</th>
-              <th>Počet hodin</th>
-              <th>Místo</th>
+              <th onclick="sortTable(0, this)">Datum <span class="sort-icon"></span></th>
+              <th onclick="sortTable(1, this)">Zaměstnanec <span class="sort-icon"></span></th>
+              <th onclick="sortTable(2, this)">Příchod <span class="sort-icon"></span></th>
+              <th onclick="sortTable(3, this)">Odchod <span class="sort-icon"></span></th>
+              <th onclick="sortTable(4, this)">Počet hodin <span class="sort-icon"></span></th>
+              <th onclick="sortTable(5, this)">Místo <span class="sort-icon"></span></th>
               <th>Poznámka</th>
-              <th>Stav</th>
+              <th onclick="sortTable(7, this)">Stav <span class="sort-icon"></span></th>
               <th>Akce</th>
             </tr>
           </thead>
@@ -194,6 +223,7 @@
       console.log(DOCHAZKA);  // pomocné ladění
       const res = await fetch('/api/admin_dochazka');
       DOCHAZKA = await res.json();
+      populateFilters();
 
       const countsByStatus = {};
 
@@ -246,11 +276,19 @@
     // Funkce pro vykreslení tabulky
     function renderTable() {
       const tbody = document.getElementById('attendanceTableBody');
-      const search = document.getElementById('searchInput').value.toLowerCase();
+      const selectedPlace = document.getElementById('placeFilter').value;
+      const selectedEmployee = document.getElementById('employeeFilter').value;
+      const selectedMonth = document.getElementById('monthFilter').value;
+
       tbody.innerHTML = '';
+
       for (let r of DOCHAZKA) {
         const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
-        if (fullName.toLowerCase().includes(search) || r.date.includes(search)) {
+        if (
+          (!selectedPlace || (r.place || 'nezadáno') === selectedPlace) &&
+          (!selectedEmployee || fullName === selectedEmployee) &&
+          (!selectedMonth || r.date.startsWith(selectedMonth))
+        ) {
           tbody.innerHTML += `<tr>
             <td>${r.date}</td>
             <td>${fullName}</td>
@@ -258,7 +296,6 @@
             <td>${r.out_time}</td>
             <td>${r.hours}</td>
             <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
-
             <td class="text-muted small">
               ${
                 r.note
@@ -268,8 +305,6 @@
                   : '<span class="text-muted">bez poznámky</span>'
               }
             </td>
-
-
             <td>${getStatusBadge(r.status)}</td>
             <td class="btn-actions">
               <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.username}', '${r.in_time}', '${r.out_time}', '${r.status}', \`${r.place || ''}\`, \`${r.note || ''}\`)">Upravit</button>
@@ -280,6 +315,85 @@
       }
     }
 
+    let currentSortColumn = null;
+    let currentSortDirection = 'asc';
+
+    function sortTable(colIndex, thElement) {
+  const rows = Array.from(document.querySelectorAll('#attendanceTableBody tr'));
+  const isSameColumn = currentSortColumn === colIndex;
+
+  currentSortDirection = isSameColumn && currentSortDirection === 'asc' ? 'desc' : 'asc';
+  currentSortColumn = colIndex;
+
+  rows.sort((a, b) => {
+    let valA = a.cells[colIndex].innerText.trim();
+    let valB = b.cells[colIndex].innerText.trim();
+
+    // Speciální řazení pro datum (sloupec 0)
+    if (colIndex === 0) {
+      const dateA = new Date(valA);
+      const dateB = new Date(valB);
+      return currentSortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    }
+
+    // zkusíme řadit číselně, jinak jako text
+    const numA = parseFloat(valA.replace(',', '.'));
+    const numB = parseFloat(valB.replace(',', '.'));
+
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return currentSortDirection === 'asc' ? numA - numB : numB - numA;
+    } else {
+      return currentSortDirection === 'asc'
+        ? valA.localeCompare(valB)
+        : valB.localeCompare(valA);
+    }
+  });
+
+  const tbody = document.getElementById('attendanceTableBody');
+  tbody.innerHTML = '';
+  rows.forEach(row => tbody.appendChild(row));
+
+      // Reset ikon
+      document.querySelectorAll('th .sort-icon').forEach(el => el.innerHTML = '');
+      document.querySelectorAll('th').forEach(el => el.classList.remove('text-underline'));
+
+      // Přidání šipky a podtržení
+      if (thElement) {
+        const icon = thElement.querySelector('.sort-icon');
+        icon.innerHTML = currentSortDirection === 'asc' ? '▲' : '▼';
+        thElement.classList.add('text-underline');
+      }
+    }
+
+
+    // Funkce pro naplnění filtrů
+    function populateFilters() {
+      const employeeSet = new Set();
+      const placeSet = new Set();
+      const monthSet = new Set();
+
+      for (const r of DOCHAZKA) {
+        const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+        employeeSet.add(fullName);
+        placeSet.add(r.place || 'nezadáno');
+        monthSet.add(r.date.substring(0, 7)); // YYYY-MM
+      }
+
+      const employeeFilter = document.getElementById('employeeFilter');
+      employeeFilter.innerHTML = '<option value="">Všichni zaměstnanci</option>' +
+        [...employeeSet].sort().map(e => `<option value="${e}">${e}</option>`).join('');
+
+      const monthFilter = document.getElementById('monthFilter');
+      monthFilter.innerHTML = '<option value="">Všechny měsíce</option>' +
+        [...monthSet].sort().map(m => `<option value="${m}">${m}</option>`).join('');
+
+      const placeFilter = document.getElementById('placeFilter');
+      placeFilter.innerHTML = '<option value="">Všechna místa</option>' +
+        [...placeSet].sort().map(p => `<option value="${p}">${p}</option>`).join('');
+
+    }
+
+    // Funkce pro otevření modálního okna pro úpravu
     function openEditModal(date, username, in_time, out_time, status, place = '', note = '') {
       document.getElementById('editDate').value = date;
       document.getElementById('editUsername').value = username;
@@ -342,7 +456,7 @@
         bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
         await loadDochazka();
         const clickInfo = { dateStr: date };
-        calendar.getOption('dateClick')(clickInfo);
+      calendar.getOption('dateClick')(clickInfo);
       }
     });
 
@@ -376,13 +490,6 @@
       calendar.getOption('dateClick')(clickInfo);
     }
 
-    function sortTable(colIndex) {
-      const rows = [...document.querySelectorAll('#attendanceTableBody tr')];
-      const sorted = rows.sort((a, b) => a.cells[colIndex].innerText.localeCompare(b.cells[colIndex].innerText));
-      const tbody = document.getElementById('attendanceTableBody');
-      tbody.innerHTML = '';
-      for (const r of sorted) tbody.appendChild(r);
-    }
 
     let calendar;
     document.addEventListener('DOMContentLoaded', async function () {
@@ -457,7 +564,10 @@
         document.getElementById('tableViewBtn').classList.add('active-view-btn');
       });
 
-      document.getElementById('searchInput').addEventListener('input', renderTable);
+      // Inicializace DataTable po změně filtrů
+      document.getElementById('employeeFilter').addEventListener('change', renderTable);
+      document.getElementById('monthFilter').addEventListener('change', renderTable);
+      document.getElementById('placeFilter').addEventListener('change', renderTable);
     });
 
     // Funkce na zobrazení celé poznámky
