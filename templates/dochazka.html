@@ -135,6 +135,7 @@
               <select class="form-select" id="newPlaceSelect">
                 <option value="">– Vyber místo –</option>
                 <option value="Trutnov">Trutnov</option>
+                <option value="Hospoda">Hospoda</option>
                 <option value="Náchod">Náchod</option>
                 <option value="Benecko">Benecko</option>
                 <option value="Poustevna">Poustevna</option>
@@ -228,7 +229,7 @@
         inSpan.outerHTML = `<input type="time" class="form-control" id="modalInTimeInput" value="${inSpan.textContent.trim()}">`;
         outSpan.outerHTML = `<input type="time" class="form-control" id="modalOutTimeInput" value="${outSpan.textContent.trim()}">`;
 
-        const placeOptions = ['Trutnov', 'Náchod', 'Benecko', 'Poustevna', 'Diemelstadt', 'Jiné'];
+        const placeOptions = ['Trutnov','Hospoda', 'Náchod', 'Benecko', 'Poustevna', 'Diemelstadt', 'Jiné'];
         const currentPlace = placeSpan.textContent.trim();
 
         placeWrapper.innerHTML = `

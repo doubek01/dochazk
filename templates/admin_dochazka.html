@@ -35,6 +35,10 @@
       background-color: #f3e5f5;
       color: black;
     }
+    .bg-place-hospoda {
+      background-color: #c146c1;
+      color: black;
+    }
     .bg-place-nezadáno {
       background-color: #e0e0e0;
       color: black;
@@ -302,7 +306,7 @@
                   ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
                       <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
                     </a>`
-                  : '<span class="text-muted">bez poznámky</span>'
+                  : '<span class="text-muted"> </span>'
               }
             </td>
             <td>${getStatusBadge(r.status)}</td>
@@ -394,7 +398,7 @@
     }
 
     // Funkce pro otevření modálního okna pro úpravu
-    function openEditModal(date, username, in_time, out_time, status, place = '', note = '') {
+    function openEditModal(date, username, in_time, out_time, status, place = '', note = '', z_kalendare = false) {
       document.getElementById('editDate').value = date;
       document.getElementById('editUsername').value = username;
       document.getElementById('editInTime').value = in_time;
@@ -409,12 +413,13 @@
       const detailModal = bootstrap.Modal.getOrCreateInstance(detailModalEl);
       detailModal.hide();  // Skryje modální okno detailu dne
 
-      // Po zavření editace se znovu otevře detail dne
-      document.getElementById('editModal').addEventListener('hidden.bs.modal', function reopenDetailModal() {
-        detailModal.show();
-        this.removeEventListener('hidden.bs.modal', reopenDetailModal); // zamezí opakování
-      });
-
+      if (z_kalendare) {
+        // Po zavření editace se znovu otevře detail dne (jen pokud přichází z kalendáře)
+        document.getElementById('editModal').addEventListener('hidden.bs.modal', function reopenDetailModal() {
+          detailModal.show();
+          this.removeEventListener('hidden.bs.modal', reopenDetailModal);
+        });
+      }
     }
 
     document.getElementById('editForm').addEventListener('submit', async function(e) {
