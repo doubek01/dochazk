@@ -269,7 +269,7 @@
             <td><span class="badge-status ${badge}">${r.status}</span></td>
             <td>
               <button class="btn btn-sm btn-outline-success" onclick="approve('${r.date}', '${selectedEmployee}')">Schválit</button>
-              <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.in_time}', '${r.out_time}', '${r.status}')">Upravit</button>
+              <button class="btn btn-sm btn-outline-primary" onclick="openEditModal('${r.date}', '${r.in_time}', '${r.out_time}', '${r.status}', \`${r.place || ''}\`, \`${r.note || ''}\`)">Upravit</button>
             </td>
           </tr>`;
       }
@@ -330,26 +330,68 @@
 
     document.addEventListener('DOMContentLoaded', loadEmployees);
 
+    // Funkce pro otevření modálního okna pro editaci
     let editingDate = null;
-    function openEditModal(date, inTime, outTime, status) {
+    function openEditModal(date, inTime, outTime, status, place, note) {
+      console.log({date, inTime, outTime, status, place, note});  // debug
       editingDate = date;
       document.getElementById('editDate').value = date;
-      document.getElementById('editIn').value = inTime;
-      document.getElementById('editOut').value = outTime;
+      document.getElementById('editInTime').value = inTime;
+      document.getElementById('editOutTime').value = outTime;
       document.getElementById('editStatus').value = status;
+      document.getElementById('editPlace').value = place || '';
+      document.getElementById('editNote').value = note || '';
       new bootstrap.Modal(document.getElementById('editModal')).show();
     }
-
+    
     async function saveChanges() {
       const date = document.getElementById('editDate').value;
-      const in_time = document.getElementById('editIn').value;
-      const out_time = document.getElementById('editOut').value;
+      const in_time = document.getElementById('editInTime').value;
+      const out_time = document.getElementById('editOutTime').value;
       const status = document.getElementById('editStatus').value;
+      const place = document.getElementById('editPlace').value;
+      const note = document.getElementById('editNote').value;
 
-      await updateTime(date, selectedEmployee, in_time, out_time);
-      await changeStatus(date, selectedEmployee, status);
-      bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+      // 1. Uložení času, místa a poznámky
+      const res1 = await fetch('/api/update_time', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: selectedEmployee,
+          date,
+          in_time,
+          out_time,
+          place,
+          note
+        })
+      });
+
+      // 2. Uložení stavu
+      const res2 = await fetch('/api/zmenit_stav', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: selectedEmployee,
+          date,
+          status
+        })
+      });
+
+      if (res1.ok && res2.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+        await showProfile(selectedEmployee); // znovu načti tabulku
+      } else {
+        alert('Nepodařilo se uložit změny.');
+        console.error('update_time response:', await res1.text());
+        console.error('zmenit_stav response:', await res2.text());
+      }
     }
+
+
 
     function confirmDelete() {
       if (!confirm('Opravdu chcete smazat tento záznam?')) return;
@@ -514,36 +556,53 @@
     
   </script>
 
-  <!-- Modal pro úpravu docházky -->
-  <div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+  <!-- MODAL NA ÚPRAVU -->
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title" id="editModalLabel">Upravit docházku</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+          <h5 class="modal-title">Upravit docházku</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <input type="hidden" id="editDate">
-          <div class="mb-3">
-            <label for="editIn">Příchod:</label>
-            <input type="time" id="editIn" class="form-control">
-          </div>
-          <div class="mb-3">
-            <label for="editOut">Odchod:</label>
-            <input type="time" id="editOut" class="form-control">
-          </div>
-          <div class="mb-3">
-            <label for="editStatus">Stav:</label>
-            <select id="editStatus" class="form-select">
-              <option>Čeká na schválení</option>
-              <option>Schváleno</option>
-              <option>Proplaceno</option>
-            </select>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-danger" onclick="confirmDelete()">Smazat</button>
-          <button class="btn btn-primary" onclick="saveChanges()">Uložit změny</button>
+          <form id="editForm">
+            <input type="hidden" id="editDate">
+            <input type="hidden" id="editUsername">
+
+            <div class="mb-3">
+              <label for="editInTime" class="form-label">Příchod</label>
+              <input type="time" class="form-control" id="editInTime">
+            </div>
+
+            <div class="mb-3">
+              <label for="editOutTime" class="form-label">Odchod</label>
+              <input type="time" class="form-control" id="editOutTime">
+            </div>
+
+            <div class="mb-3">
+              <label for="editStatus" class="form-label">Stav</label>
+              <select class="form-select" id="editStatus">
+                <option value="Čeká na schválení">Čeká na schválení</option>
+                <option value="Schváleno">Schváleno</option>
+                <option value="Proplaceno">Proplaceno</option>
+              </select>
+            </div>
+
+            <div class="mb-3">
+              <label for="editPlace" class="form-label">Místo</label>
+              <input type="text" class="form-control" id="editPlace">
+            </div>
+
+            <div class="mb-3">
+              <label for="editNote" class="form-label">Poznámka</label>
+              <textarea class="form-control" id="editNote" rows="2"></textarea>
+            </div>
+
+            <div class="d-flex justify-content-between">
+              <button type="button" class="btn btn-success" onclick="saveChanges()">Uložit změny</button>
+              <button type="button" class="btn btn-danger" id="deleteRecordBtn">Smazat</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
