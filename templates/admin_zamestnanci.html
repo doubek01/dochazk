@@ -458,6 +458,14 @@
       await showProfile(selectedEmployee);
     }
 
+    let paymentDateSortDirection = 'desc'; // nebo 'asc'
+
+    function togglePaymentDateSort() {
+      paymentDateSortDirection = paymentDateSortDirection === 'asc' ? 'desc' : 'asc';
+      document.getElementById('paymentDateSortIcon').innerText = paymentDateSortDirection === 'asc' ? '↑' : '↓';
+      openPaymentForm(); // přegeneruje modal seřazeně
+    }
+
     // Funkce pro otevření formuláře pro proplacení
     function openPaymentForm() {
       const tbody = document.getElementById('paymentTableBody');
@@ -468,36 +476,95 @@
         .then(data => {
           document.getElementById('hourlyRateInput').value = data.hourly_rate;
 
-          const filtered = data.attendance?.filter(r => r.status.toLowerCase().includes('schváleno')) || [];
-          for (let r of filtered) {
-            tbody.innerHTML += `
-              <tr>
-                <td>${r.date}</td>
-                <td>${r.in_time}</td>
-                <td>${r.out_time}</td>
-                <td>${r.hours}</td>
-                <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
-                <td>
-                  ${
-                    r.note
-                      ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
-                          <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
-                        </a>`
-                      : '<span class="text-muted">bez poznámky</span>'
-                  }
-                </td>
-                <td class="text-center">
-                  <div class="form-check d-flex justify-content-center">
-                    <input class="form-check-input payment-checkbox" type="checkbox" value="${r.date}">
-                  </div>
-                </td>
-              </tr>`;
+          const placeSelect = document.getElementById('filterPlace');
+          const monthSelect = document.getElementById('filterMonth');
+
+          // Extrahujeme unikátní místa a měsíce z dat
+          const approved = data.attendance?.filter(r =>
+            r.status.toLowerCase().includes('schváleno')
+          ) || [];
+
+          const uniquePlaces = [...new Set(approved.map(r => (r.place || 'nezadáno')))];
+          const uniqueMonths = [...new Set(approved.map(r => {
+            const [yyyy, mm] = r.date.split('-');
+            return `${mm} - ${yyyy}`;
+          }))];
+
+          // Naplníme selecty možnostmi
+          placeSelect.innerHTML = '<option value="">Všechna místa</option>';
+          uniquePlaces.forEach(place => {
+            placeSelect.innerHTML += `<option value="${place.toLowerCase()}">${place}</option>`;
+          });
+
+          monthSelect.innerHTML = '<option value="">Všechny měsíce</option>';
+          uniqueMonths.forEach(month => {
+            monthSelect.innerHTML += `<option value="${month}">${month}</option>`;
+          });
+
+          const applyFilters = () => {
+            const selectedPlace = placeSelect.value.toLowerCase();
+            const selectedMonth = monthSelect.value;
+
+            const filtered = approved.filter(r => {
+              const matchesPlace = !selectedPlace || (r.place || '').toLowerCase() === selectedPlace;
+              const [yyyy, mm] = r.date.split('-');
+              const currentMonth = `${mm} - ${yyyy}`;
+              const matchesMonth = !selectedMonth || currentMonth === selectedMonth;
+              return matchesPlace && matchesMonth;
+            });
+
+            filtered.sort((a, b) => {
+              return paymentDateSortDirection === 'asc'
+                ? a.date.localeCompare(b.date)
+                : b.date.localeCompare(a.date);
+            });
+
+
+            tbody.innerHTML = '';
+            for (let r of filtered) {
+              tbody.innerHTML += `
+                <tr>
+                  <td>${r.date}</td>
+                  <td>${r.in_time}</td>
+                  <td>${r.out_time}</td>
+                  <td>${r.hours}</td>
+                  <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
+                  <td>
+                    ${
+                      r.note
+                        ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                            <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
+                          </a>`
+                        : '<span class="text-muted">bez poznámky</span>'
+                    }
+                  </td>
+                  <td class="text-center">
+                    <div class="form-check d-flex justify-content-center">
+                      <input class="form-check-input payment-checkbox" type="checkbox" value="${r.date}">
+                    </div>
+                  </td>
+                </tr>`;
+            }
+
+            document.querySelectorAll('.payment-checkbox').forEach(cb => {
+              cb.addEventListener('change', updateTotalPayment);
+            });
+
+            updateTotalPayment();
+          };
+
+          // Připojení filtrů
+          placeSelect.onchange = applyFilters;
+          monthSelect.onchange = applyFilters;
+
+          applyFilters();
+
+          const modalEl = document.getElementById('paymentModal');
+          if (!bootstrap.Modal.getInstance(modalEl)) {
+            new bootstrap.Modal(modalEl).show();
           }
 
-          // Spustí modal
-          new bootstrap.Modal(document.getElementById('paymentModal')).show();
-
-          // Připojí obsluhy událostí – musí být uvnitř tohoto bloku!
+          // Bonus + ovládání
           const toggleBtn = document.getElementById('toggleBonusBtn');
           const bonusContainer = document.getElementById('bonusHoursContainer');
           const bonusInput = document.getElementById('bonusHoursInput');
@@ -505,12 +572,12 @@
 
           bonusHours = 0;
 
-          toggleBtn.addEventListener('click', () => {
+          toggleBtn?.addEventListener('click', () => {
             toggleBtn.style.display = 'none';
             bonusContainer.style.display = 'flex';
           });
 
-          cancelBtn.addEventListener('click', () => {
+          cancelBtn?.addEventListener('click', () => {
             bonusContainer.style.display = 'none';
             toggleBtn.style.display = 'inline-block';
             bonusInput.value = '';
@@ -518,17 +585,13 @@
             updateTotalPayment();
           });
 
-          bonusInput.addEventListener('input', () => {
+          bonusInput?.addEventListener('input', () => {
             bonusHours = parseFloat(bonusInput.value) || 0;
             updateTotalPayment();
           });
-          // Po vytvoření všech checkboxů v paymentTableBody
-          document.querySelectorAll('.payment-checkbox').forEach(cb => {
-            cb.addEventListener('change', updateTotalPayment);
-          });
         });
-    
     }
+    
     // Funkce pro aktualizaci celkové částky k proplacení
     function updateTotalPayment() {
       const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
@@ -761,10 +824,27 @@
               </label>
             </div>
           </div>
+        
+          <div class="row g-3 mt-4 mb-3">
+            <div class="col-md-3">
+              <select class="form-select" id="filterPlace">
+                <option value="">Všechna místa</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <select class="form-select" id="filterMonth">
+                <option value="">Všechny měsíce</option>
+              </select>
+            </div>
+          </div>
+
           <table class="table table-sm table-bordered">
             <thead>
               <tr>
-                <th>Datum</th>
+                <th onclick="togglePaymentDateSort()" style="cursor:pointer">
+                  Datum <span id="paymentDateSortIcon">↓</span>
+                </th>
                 <th>Příchod</th>
                 <th>Odchod</th>
                 <th>Hodin</th>

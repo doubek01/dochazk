@@ -116,9 +116,10 @@
       <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-primary">🏠 Domů</a>
     </div>
 
-    <div class="view-toggle d-flex gap-2">
+    <div class="view-toggle d-flex gap-2"> 
       <button id="calendarViewBtn" class="btn btn-outline-primary active-view-btn">Kalendář</button>
       <button id="tableViewBtn" class="btn btn-outline-primary">Tabulka</button>
+      <button class="btn btn-success btn-sm" onclick="openAddModal()">+ Přidat docházku</button>
     </div>
 
     <div id="calendarContainer" class="mt-4">
@@ -582,7 +583,9 @@
       modal.show();
     }
 
+
   </script>
+
   <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
@@ -610,5 +613,159 @@
     </div>
   </div>
 
+<!-- Modal pro přidání nové docházky -->
+<div class="modal fade" id="addModal" tabindex="-1" aria-labelledby="addModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="addForm" onsubmit="event.preventDefault(); submitAddForm();">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addModalLabel">Vytvořit docházku</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- Vyhledávání zaměstnance -->
+          <div class="mb-3 position-relative">
+            <label for="addUsernameInput" class="form-label">Zaměstnanec</label>
+            <input type="text" class="form-control" id="addUsernameInput" placeholder="Začni psát jméno..." autocomplete="off" required>
+            <div id="userSuggestions" class="list-group position-absolute w-100" style="z-index: 1050;"></div>
+            <input type="hidden" id="addUsername">
+          </div>
+
+          <!-- Datum -->
+          <div class="mb-3">
+            <label for="addDate" class="form-label">Datum</label>
+            <input type="date" class="form-control" id="addDate" required>
+          </div>
+
+          <!-- Příchod -->
+          <div class="mb-3">
+            <label for="addInTime" class="form-label">Příchod</label>
+            <input type="time" class="form-control" id="addInTime" required>
+          </div>
+
+          <!-- Odchod -->
+          <div class="mb-3">
+            <label for="addOutTime" class="form-label">Odchod</label>
+            <input type="time" class="form-control" id="addOutTime" required>
+          </div>
+
+          <!-- Místo -->
+          <div class="mb-3">
+            <label for="addPlace" class="form-label">Místo</label>
+            <input type="text" class="form-control" id="addPlace">
+          </div>
+
+          <!-- Poznámka -->
+          <div class="mb-3">
+            <label for="addNote" class="form-label">Poznámka</label>
+            <textarea class="form-control" id="addNote" rows="2"></textarea>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Uložit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+let allUsers = [];
+
+window.openAddModal = async function () {
+  // Reset formuláře a připrav modal
+  document.getElementById('addForm').reset();
+  document.getElementById('userSuggestions').innerHTML = '';
+  document.getElementById('addUsername').value = '';
+
+  // Otevře Bootstrap modal
+  new bootstrap.Modal(document.getElementById('addModal')).show();
+
+  // Načti seznam uživatelů (pokud ještě není načtený)
+  if (allUsers.length === 0) {
+    const res = await fetch('/api/seznam_zamestnancu');
+    allUsers = await res.json();
+  }
+
+  // Znovu přidání event listeneru na input (aby fungovalo autocomplete pokaždé)
+  const input = document.getElementById('addUsernameInput');
+  const newInput = input.cloneNode(true);
+  input.parentNode.replaceChild(newInput, input);
+
+  newInput.addEventListener('input', function () {
+    const value = this.value.toLowerCase();
+    const suggestions = document.getElementById('userSuggestions');
+    suggestions.innerHTML = '';
+
+    if (value.length < 2) return;
+
+    const matches = allUsers.filter(u =>
+      `${u.first_name} ${u.last_name}`.toLowerCase().includes(value)
+    );
+
+    matches.forEach(u => {
+      const item = document.createElement('button');
+      item.className = 'list-group-item list-group-item-action';
+      item.textContent = `${u.first_name} ${u.last_name}`;
+      item.onclick = function () {
+        newInput.value = `${u.first_name} ${u.last_name}`;
+        document.getElementById('addUsername').value = u.username;
+        suggestions.innerHTML = '';
+      };
+      suggestions.appendChild(item);
+    });
+  });
+}
+</script>
+
+
 </body>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  // 🔍 Vyhledávání zaměstnanců podle jména
+  
+  // ✅ Odeslání formuláře
+  document.getElementById("addForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    submitForm();
+  });
+
+  // 🌟 Funkce pro odeslání dat
+  window.submitForm = function () {
+    const payload = {
+      username: document.getElementById('addUsername').value,
+      date: document.getElementById('addDate').value,
+      in_time: document.getElementById('addInTime').value,
+      out_time: document.getElementById('addOutTime').value,
+      place: document.getElementById('addPlace').value,
+      note: document.getElementById('addNote').value,
+    };
+
+    fetch('/api/pridat_dochazku_admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(response => {
+        if (!response.ok) throw new Error("Chyba při odesílání formuláře.");
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          location.reload();  // 🔄 Refresh stránky
+        } else {
+          alert("Nepodařilo se uložit docházku.");
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Nastala chyba při odesílání.");
+      });
+  };
+});
+</script>
+
+
 </html>
