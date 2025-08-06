@@ -180,6 +180,8 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+  <script> let bonusHours = 0; // <-- GLOBÁLNĚ, mimo DOMContentLoaded! </script>
+
 
   <script>
     let employees = [];
@@ -520,15 +522,43 @@
             bonusHours = parseFloat(bonusInput.value) || 0;
             updateTotalPayment();
           });
+          // Po vytvoření všech checkboxů v paymentTableBody
+          document.querySelectorAll('.payment-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateTotalPayment);
+          });
         });
     
     }
+    // Funkce pro aktualizaci celkové částky k proplacení
+    function updateTotalPayment() {
+      const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
+      const checkboxes = document.querySelectorAll('.payment-checkbox:checked');
+      let totalHours = 0;
+
+      checkboxes.forEach(cb => {
+        const row = cb.closest('tr');
+        const hours = parseFloat(row.children[3].innerText);
+        totalHours += hours || 0;
+      });
+
+      const finalHours = totalHours + bonusHours;
+      document.getElementById('selectedHoursInput').value = finalHours.toFixed(2);
+      document.getElementById('totalPaymentInput').value = (finalHours * hourlyRate).toFixed(2);
+    }
+
     // Funkce pro označení všech checkboxů Payement
     function toggleAllPaymentCheckboxes() {
-      const checkboxes = document.querySelectorAll('.payment-checkbox');
-      const allChecked = document.getElementById('checkAllPayments').checked;
-      checkboxes.forEach(cb => cb.checked = allChecked);
+      const checkAll = document.getElementById("checkAllPayments").checked;
+      const checkboxes = document.querySelectorAll(".payment-checkbox");
+
+      checkboxes.forEach((cb) => {
+        cb.checked = checkAll;
+      });
+
+      // Ručně spustíme přepočet po všech změnách
+      updateTotalPayment();
     }
+
     // Funkce pro označení vybraných hodin jako proplacené
     function paySelected() {
       const checked = [...document.querySelectorAll('.payment-checkbox:checked')]
@@ -768,24 +798,8 @@
   </div>
 
 <script>
+
   document.addEventListener('DOMContentLoaded', () => {
-    let bonusHours = 0;
-
-    function updateTotalPayment() {
-      const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
-      const checkboxes = document.querySelectorAll('.payment-checkbox:checked');
-      let totalHours = 0;
-
-      checkboxes.forEach(cb => {
-        const row = cb.closest('tr');
-        const hours = parseFloat(row.children[3].innerText);
-        totalHours += hours || 0;
-      });
-
-      const finalHours = totalHours + bonusHours;
-      document.getElementById('selectedHoursInput').value = finalHours.toFixed(2);
-      document.getElementById('totalPaymentInput').value = (finalHours * hourlyRate).toFixed(2);
-    }
 
     // 🔹 ZMĚNA bonusových hodin
     const bonusInput = document.getElementById('bonusHoursInput');
