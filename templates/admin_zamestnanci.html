@@ -398,7 +398,7 @@
       deleteRecord(editingDate, selectedEmployee);
       bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
     }
-
+    // Funkce pro otevření formuláře pro schválení hodin
     function openApprovalForm() {
       const tbody = document.getElementById('approvalTableBody');
       tbody.innerHTML = '';
@@ -415,6 +415,16 @@
                 <td>${r.in_time}</td>
                 <td>${r.out_time}</td>
                 <td>${r.hours}</td>
+                <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
+                <td>
+                  ${
+                    r.note
+                      ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                          <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
+                        </a>`
+                      : '<span class="text-muted">bez poznámky</span>'
+                  }
+                </td>
                 <td class="text-center">
                   <div class="form-check d-flex justify-content-center">
                     <input class="form-check-input approval-checkbox" type="checkbox" value="${r.date}">
@@ -453,7 +463,8 @@
 
       fetch(`/api/admin_zamestnanec/${selectedEmployee}`)
         .then(res => res.json())
-        .then(data => {document.getElementById('hourlyRateInput').value = data.hourly_rate;
+        .then(data => {
+          document.getElementById('hourlyRateInput').value = data.hourly_rate;
 
           const filtered = data.attendance?.filter(r => r.status.toLowerCase().includes('schváleno')) || [];
           for (let r of filtered) {
@@ -463,6 +474,16 @@
                 <td>${r.in_time}</td>
                 <td>${r.out_time}</td>
                 <td>${r.hours}</td>
+                <td><span class="badge-status bg-place-${(r.place || 'nezadáno').toLowerCase()}">${r.place || '-'}</span></td>
+                <td>
+                  ${
+                    r.note
+                      ? `<a href="#" class="text-decoration-none text-dark" onclick="showFullNote(\`${r.note.replace(/`/g, '\\`')}\`); return false;">
+                          <i class="bi bi-chat-left-text me-1"></i>${r.note.substring(0, 40)}${r.note.length > 40 ? '…' : ''}
+                        </a>`
+                      : '<span class="text-muted">bez poznámky</span>'
+                  }
+                </td>
                 <td class="text-center">
                   <div class="form-check d-flex justify-content-center">
                     <input class="form-check-input payment-checkbox" type="checkbox" value="${r.date}">
@@ -471,9 +492,36 @@
               </tr>`;
           }
 
+          // Spustí modal
           new bootstrap.Modal(document.getElementById('paymentModal')).show();
-        });
 
+          // Připojí obsluhy událostí – musí být uvnitř tohoto bloku!
+          const toggleBtn = document.getElementById('toggleBonusBtn');
+          const bonusContainer = document.getElementById('bonusHoursContainer');
+          const bonusInput = document.getElementById('bonusHoursInput');
+          const cancelBtn = document.getElementById('cancelBonusBtn');
+
+          bonusHours = 0;
+
+          toggleBtn.addEventListener('click', () => {
+            toggleBtn.style.display = 'none';
+            bonusContainer.style.display = 'flex';
+          });
+
+          cancelBtn.addEventListener('click', () => {
+            bonusContainer.style.display = 'none';
+            toggleBtn.style.display = 'inline-block';
+            bonusInput.value = '';
+            bonusHours = 0;
+            updateTotalPayment();
+          });
+
+          bonusInput.addEventListener('input', () => {
+            bonusHours = parseFloat(bonusInput.value) || 0;
+            updateTotalPayment();
+          });
+        });
+    
     }
     // Funkce pro označení všech checkboxů Payement
     function toggleAllPaymentCheckboxes() {
@@ -529,22 +577,7 @@
         alert("Nastala chyba při odesílání požadavku.");
       });
     }
-    
-    // Aktualizace celkového počtu hodin a celkové výplaty při změně checkboxů
-    document.addEventListener('change', () => {
-      const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
-      const checkboxes = document.querySelectorAll('.payment-checkbox:checked');
-      let totalHours = 0;
 
-      checkboxes.forEach(cb => {
-        const row = cb.closest('tr');
-        const hours = parseFloat(row.children[3].innerText);
-        totalHours += hours || 0;
-      });
-
-      document.getElementById('selectedHoursInput').value = totalHours.toFixed(2);
-      document.getElementById('totalPaymentInput').value = (totalHours * hourlyRate).toFixed(2);
-    });
 
     // Funkce na zobrazení celé poznámky
     function showFullNote(note) {
@@ -552,7 +585,6 @@
       const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('noteModal'));
       modal.show();
     }
-
     
   </script>
 
@@ -637,6 +669,8 @@
                 <th>Příchod</th>
                 <th>Odchod</th>
                 <th>Hodin</th>
+                <th>Místo</th>
+                <th>Poznámka</th>
                 <th class="text-center"> </th>
               </tr>
             </thead>
@@ -661,19 +695,29 @@
 
           <div class="card mb-3">
             <div class="card-body">
-              <div class="row g-2 align-items-end">
-                <div class="row g-2 align-items-end mb-3">
-                  <div class="col-md-4">
+              <div class="row g-3 align-items-start">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-3">
                     <label for="hourlyRateInput" class="form-label">Hodinová sazba (Kč/h)</label>
                     <input type="number" class="form-control" id="hourlyRateInput" value="0">
                   </div>
-                  <div class="col-md-4">
+
+                  <div class="col-md-3">
                     <label for="selectedHoursInput" class="form-label">Označené hodiny</label>
-                    <input type="number" class="form-control" id="selectedHoursInput" value="0" readonly>
+                    <input type="number" class="form-control" id="selectedHoursInput" value="0.00" readonly>
                   </div>
-                  <div class="col-md-4">
+
+                  <div class="col-md-3">
+                    <label for="bonusHoursInput" class="form-label">Hodiny navíc</label>
+                    <div class="d-flex align-items-center gap-2">
+                      <input type="number" class="form-control form-control-sm" id="bonusHoursInput" placeholder="Hodiny navíc" style="width: 120px;">
+                      <button id="cancelBonusBtn" class="btn btn-sm btn-outline-danger" type="button">✖</button>
+                    </div>
+                  </div>
+
+                  <div class="col-md-3">
                     <label for="totalPaymentInput" class="form-label">K vyplacení (Kč)</label>
-                    <input type="number" class="form-control fw-bold text-success" id="totalPaymentInput" value="0" readonly>
+                    <input type="number" class="form-control fw-bold text-success" id="totalPaymentInput" value="0.00" readonly>
                   </div>
                 </div>
               </div>
@@ -694,6 +738,8 @@
                 <th>Příchod</th>
                 <th>Odchod</th>
                 <th>Hodin</th>
+                <th>Místo</th>
+                <th>Poznámka</th>
                 <th class="text-center"> </th>
               </tr>
             </thead>
@@ -720,6 +766,61 @@
       </div>
     </div>
   </div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    let bonusHours = 0;
+
+    function updateTotalPayment() {
+      const hourlyRate = parseFloat(document.getElementById('hourlyRateInput').value) || 0;
+      const checkboxes = document.querySelectorAll('.payment-checkbox:checked');
+      let totalHours = 0;
+
+      checkboxes.forEach(cb => {
+        const row = cb.closest('tr');
+        const hours = parseFloat(row.children[3].innerText);
+        totalHours += hours || 0;
+      });
+
+      const finalHours = totalHours + bonusHours;
+      document.getElementById('selectedHoursInput').value = finalHours.toFixed(2);
+      document.getElementById('totalPaymentInput').value = (finalHours * hourlyRate).toFixed(2);
+    }
+
+    // 🔹 ZMĚNA bonusových hodin
+    const bonusInput = document.getElementById('bonusHoursInput');
+    if (bonusInput) {
+      bonusInput.addEventListener('input', () => {
+        bonusHours = parseFloat(bonusInput.value) || 0;
+        updateTotalPayment();
+      });
+    }
+
+    // 🔹 Tlačítko ✖ pro zrušení bonusu
+    const cancelBtn = document.getElementById('cancelBonusBtn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        bonusHours = 0;
+        bonusInput.value = '';
+        updateTotalPayment();
+      });
+    }
+
+    // 🔹 Checkboxy pro výběr hodin
+    document.addEventListener('change', (e) => {
+      if (e.target.classList.contains('payment-checkbox')) {
+        updateTotalPayment();
+      }
+    });
+
+    // 🔹 Hodinová sazba – živý přepočet
+    const rateInput = document.getElementById('hourlyRateInput');
+    if (rateInput) {
+      rateInput.addEventListener('input', updateTotalPayment);
+    }
+  });
+</script>
+
 
 </body>
 </html>
