@@ -299,7 +299,7 @@ def update_profile_data():
 
 
 #Konec Muj profil
-#___________________________________________________________________________________________
+#_____________________________________________________________________________________________
 
 
 # Odhlášení
@@ -464,7 +464,7 @@ def api_admin_dochazka():
 
     return jsonify(data)
 
-# Admin - změna času
+# Admin - úprava dochazky (kromě stavu)
 @app.route('/api/update_time', methods=['POST'])
 def update_time():
     data = request.get_json()
@@ -548,6 +548,54 @@ def schvalit_den():
             d.status = 'Schváleno'
     db.session.commit()
     return jsonify({'success': True})
+
+# Admin - seznam zaměstnanců API
+@app.route('/api/seznam_zamestnancu')
+def seznam_zamestnancu():
+    try:
+        users = db.session.query(User).all()
+        print("DEBUG: Found", len(users), "users")
+        return jsonify([
+            {
+                'username': u.username,
+                'first_name': u.first_name,
+                'last_name': u.last_name
+            } for u in users
+        ])
+    except Exception as e:
+        print("ERROR v seznam_zamestnancu:", e)
+        return jsonify({'error': str(e)}), 500
+
+
+# Admin - přidání docházky pro zaměstnance
+@app.route('/api/pridat_dochazku_admin', methods=['POST'])
+def pridat_dochazku_admin():
+    data = request.get_json()
+    username = data.get('username')
+    date = data.get('date')
+    in_time = data.get('in_time')
+    out_time = data.get('out_time')
+    place = data.get('place')
+    note = data.get('note')
+
+    if not all([username, date, in_time, out_time]):
+        return "Chybí povinná pole", 400
+
+    nova_dochazka = Dochazka(
+        username=username,
+        date=date,
+        in_time=in_time,
+        out_time=out_time,
+        place=place,
+        note=note,
+        status='Čeká na schválení'
+    )
+
+    db.session.add(nova_dochazka)
+    db.session.commit()
+    return jsonify({"success": True})
+
+
 
 # Konec admin docházky
 #__________________________________________________________________________________________
