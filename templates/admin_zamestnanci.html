@@ -660,6 +660,11 @@
           alert('Výplata byla zapsána!');
           bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide(); // Zavře modal
           showProfile(selectedEmployee); // Načte znovu profil se všemi daty
+          zobrazQrModal(
+            document.getElementById('totalPaymentInput').value,
+            document.getElementById('profileBank').innerText
+          );
+
       
         } else {
           alert('Chyba: ' + (data.error || 'Neznámá chyba'));
@@ -877,6 +882,23 @@
     </div>
   </div>
 
+  <!-- Modal: QR kód pro platbu -->
+  <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center">
+        <div class="modal-header">
+          <h5 class="modal-title" id="qrModalLabel">QR kód pro platbu</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body">
+          <p>Částka k proplacení: <strong id="qrAmount"></strong></p>
+          <p>Bankovní účet: <strong id="qrAccount"></strong></p>
+          <img id="qrImage" src="" alt="QR kód" class="img-fluid mt-3" style="max-width: 300px;" />
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -913,6 +935,33 @@
       rateInput.addEventListener('input', updateTotalPayment);
     }
   });
+
+
+
+  // Funkce pro zobrazení QR kódu v modálním okně
+  function zobrazQrModal(castka, ucet) {
+      fetch('/api/generate_qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              amount: castka,
+              account: ucet
+          })
+      })
+      .then(response => response.json())
+      .then(data => {
+          document.getElementById('qrAmount').innerText = `${castka} Kč`;
+          document.getElementById('qrAccount').innerText = ucet;
+          document.getElementById('qrImage').src = `data:image/png;base64,${data.qr_base64}`;
+          let qrModal = new bootstrap.Modal(document.getElementById('qrModal'));
+          qrModal.show();
+      })
+      .catch(error => {
+          console.error('Chyba při generování QR kódu:', error);
+          alert('Nepodařilo se vygenerovat QR kód.');
+      });
+  }
+
 </script>
 
 

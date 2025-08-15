@@ -4,11 +4,12 @@ from datetime import datetime, timedelta
 from functools import wraps
 from collections import defaultdict
 from flask_migrate import Migrate
-
+from io import BytesIO
 
 from flask_sqlalchemy import SQLAlchemy
 from models import db, User, Dochazka, Vyplata, VyplataDochazky
 from dotenv import load_dotenv
+
 
 import os
 import pytz
@@ -16,6 +17,9 @@ import locale
 import calendar
 import urllib.parse
 import bcrypt
+import qrcode
+import base64
+import re
 
 
 # Načti proměnné z .env souboru
@@ -765,6 +769,56 @@ def admin_zamestnanec_detail(username):
     })
 
 
+
+@app.route('/api/generate_qr', methods=['POST'])
+def generate_qr():
+    data = request.get_json()
+    amount = data.get('amount')
+    account_number = data.get('account')
+
+    iban_account = convert_to_cz_iban(account_number)
+    if not iban_account:
+        return jsonify({'error': 'Chybný formát účtu'}), 400
+
+    qr_text = f"SPD*1.0*ACC:{iban_account}*AM:{amount}*CC:CZK"
+
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(qr_text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+
+    return jsonify({'qr_base64': img_str})
+
+
+
+def convert_to_cz_iban(account_number):
+
+    # Podpora i formátu s předčíslím: "115-1234567890/0100"
+    match = re.match(r'^(?:(\d+)-)?(\d{1,10})\/(\d{4})$', account_number)
+    if not match:
+        return None
+
+    predcisli, cislo, kod_banky = match.groups()
+
+    # Sestavení čísla účtu podle pravidel ČNB
+    predcisli = predcisli or '0'
+    predcisli = predcisli.zfill(6)
+    cislo = cislo.zfill(10)
+
+    bban = f"{kod_banky}{predcisli}{cislo}"
+    tmp = bban + "123500"  # CZ = 12, Z = 35, 00
+    mod = int(tmp) % 97
+    checksum = 98 - mod
+    return f"CZ{checksum:02d}{bban}"
+
+
+
+
+# Konec admin zaměstnanců
 #___________________________________________________________________________________________
 # Docházka – vše co se týká dochazka.html
 

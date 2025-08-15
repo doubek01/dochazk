@@ -7,3 +7,4 @@ bcrypt
 gunicorn
 psycopg2-binary
 rclone
+qrcode[pil]
