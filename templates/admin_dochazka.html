@@ -124,6 +124,29 @@
 
     <div id="calendarContainer" class="mt-4">
       <h2>Přehled docházky (kalendář)</h2>
+      <div class="row g-2 mb-3">
+        <div class="col-md-4">
+          <select class="form-select" id="calendarEmployeeFilter">
+            <option value="">Všichni zaměstnanci</option>
+          </select>
+
+          <div class="d-flex align-items-center gap-2 mt-3">
+            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+              Rozšířený filtr
+            </button>
+            <button id="cancelAdvancedFilterBtn" class="btn btn-outline-danger btn-sm" style="display: none;">
+              Zrušit rozšířený filtr
+            </button>
+          </div>
+
+        </div>
+        <div class="col-md-4">
+          <select class="form-select" id="calendarPlaceFilter">
+            
+            <option value="">Všechna místa</option>
+          </select>
+        </div>
+      </div>
       <div id="calendar"></div>
     </div>
 
@@ -229,13 +252,26 @@
       const res = await fetch('/api/admin_dochazka');
       DOCHAZKA = await res.json();
       populateFilters();
+      populateAdvancedFilter();
+
 
       const countsByStatus = {};
 
+      const selectedEmp = document.getElementById('calendarEmployeeFilter').value;
+      const selectedPlace = document.getElementById('calendarPlaceFilter').value;
+
       for (let r of DOCHAZKA) {
-        const key = r.date + '_' + r.status;
-        countsByStatus[key] = (countsByStatus[key] || 0) + 1;
+        const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+
+        if (
+          (!selectedEmp || fullName === selectedEmp) &&
+          (!selectedPlace || (r.place || 'nezadáno') === selectedPlace)
+        ) {
+          const key = r.date + '_' + r.status;
+          countsByStatus[key] = (countsByStatus[key] || 0) + 1;
+        }
       }
+
 
       const events = [];
       for (const key in countsByStatus) {
@@ -384,19 +420,39 @@
         monthSet.add(r.date.substring(0, 7)); // YYYY-MM
       }
 
+      // Ulož aktuální výběry
+      const currentEmp = document.getElementById('calendarEmployeeFilter').value;
+      const currentPlace = document.getElementById('calendarPlaceFilter').value;
+
+      // Kalendář – zaměstnanci
+      const calendarEmployeeFilter = document.getElementById('calendarEmployeeFilter');
+      calendarEmployeeFilter.innerHTML = '<option value="">Všichni zaměstnanci</option>' +
+        [...employeeSet].sort().map(e => `<option value="${e}">${e}</option>`).join('');
+      calendarEmployeeFilter.value = currentEmp;
+
+      // Kalendář – místa
+      const calendarPlaceFilter = document.getElementById('calendarPlaceFilter');
+      calendarPlaceFilter.innerHTML = '<option value="">Všechna místa</option>' +
+        [...placeSet].sort().map(p => `<option value="${p}">${p}</option>`).join('');
+      calendarPlaceFilter.value = currentPlace;
+
+      // Tabulka – zaměstnanci
       const employeeFilter = document.getElementById('employeeFilter');
       employeeFilter.innerHTML = '<option value="">Všichni zaměstnanci</option>' +
         [...employeeSet].sort().map(e => `<option value="${e}">${e}</option>`).join('');
 
-      const monthFilter = document.getElementById('monthFilter');
-      monthFilter.innerHTML = '<option value="">Všechny měsíce</option>' +
-        [...monthSet].sort().map(m => `<option value="${m}">${m}</option>`).join('');
-
+      // Tabulka – místa
       const placeFilter = document.getElementById('placeFilter');
       placeFilter.innerHTML = '<option value="">Všechna místa</option>' +
         [...placeSet].sort().map(p => `<option value="${p}">${p}</option>`).join('');
 
+      // Tabulka – měsíce
+      const monthFilter = document.getElementById('monthFilter');
+      monthFilter.innerHTML = '<option value="">Všechny měsíce</option>' +
+        [...monthSet].sort().map(m => `<option value="${m}">${m}</option>`).join('');
     }
+
+
 
     // Funkce pro otevření modálního okna pro úpravu
     function openEditModal(date, username, in_time, out_time, status, place = '', note = '', z_kalendare = false) {
@@ -499,6 +555,8 @@
 
     let calendar;
     document.addEventListener('DOMContentLoaded', async function () {
+      populateAdvancedFilter();
+
       calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
         initialView: 'dayGridMonth',
         locale: 'cs',
@@ -574,6 +632,9 @@
       document.getElementById('employeeFilter').addEventListener('change', renderTable);
       document.getElementById('monthFilter').addEventListener('change', renderTable);
       document.getElementById('placeFilter').addEventListener('change', renderTable);
+      document.getElementById('calendarEmployeeFilter').addEventListener('change', loadDochazka);
+      document.getElementById('calendarPlaceFilter').addEventListener('change', loadDochazka);
+
     });
 
     // Funkce na zobrazení celé poznámky
@@ -671,6 +732,40 @@
   </div>
 </div>
 
+<!-- Modal pro rozšířený filtr v kalendáři -->
+<div class="modal fade" id="advancedFilterModal" tabindex="-1" aria-labelledby="advancedFilterModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="advancedFilterModalLabel">Rozšířený filtr</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <!-- Zaměstnanci -->
+          <div class="col-md-6">
+            <input type="text" class="form-control mb-2" placeholder="Vyhledat zaměstnance..." oninput="filterList('employeeCheckboxes', this.value)">
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2 mb-2" onclick="selectAll('employeeCheckboxes')">Označit všechny zaměstnance</button>
+            <div id="employeeCheckboxes" class="form-check overflow-auto border p-2" style="max-height: 300px;"></div>
+          </div>
+
+          <!-- Místa -->
+          <div class="col-md-6">
+            <input type="text" class="form-control mb-2" placeholder="Vyhledat místo..." oninput="filterList('placeCheckboxes', this.value)">
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2 mb-2" onclick="selectAll('placeCheckboxes')">Označit všechna místa</button>
+            <div id="placeCheckboxes" class="form-check overflow-auto border p-2" style="max-height: 300px;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+        <button class="btn btn-primary" onclick="applyAdvancedFilter()">Použít filtr</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <script>
 let allUsers = [];
 
@@ -723,6 +818,121 @@ window.openAddModal = async function () {
 
 </body>
 <script>
+
+const STATUS_COLORS = {
+  'Čeká na schválení': 'orange',
+  'Schváleno': 'lightgreen',
+  'Proplaceno': 'darkgreen'
+};
+
+
+function populateAdvancedFilter() {
+  const empSet = new Set();
+  const placeSet = new Set();
+
+  for (const r of DOCHAZKA) {
+    empSet.add(`${r.first_name || ''} ${r.last_name || ''}`.trim());
+    placeSet.add(r.place || 'nezadáno');
+  }
+
+  const empDiv = document.getElementById('employeeCheckboxes');
+  empDiv.innerHTML = [...empSet].sort().map((e, i) =>
+    `<div class="form-check">
+      <input class="form-check-input" type="checkbox" value="${e}" id="emp_${i}">
+      <label class="form-check-label" for="emp_${i}">${e}</label>
+    </div>`
+  ).join('');
+
+
+  const placeDiv = document.getElementById('placeCheckboxes');
+  placeDiv.innerHTML = [...placeSet].sort().map((p, i) =>
+    `<div class="form-check">
+      <input class="form-check-input" type="checkbox" value="${p}" id="place_${i}">
+      <label class="form-check-label" for="place_${i}">${p}</label>
+    </div>`
+  ).join('');
+}
+
+// Textové vyhledávání ve filtrech
+function filterList(containerId, query) {
+  const items = document.querySelectorAll(`#${containerId} div`);
+  query = query.toLowerCase();
+  items.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+
+// Aplikace rozšířeného filtru
+function applyAdvancedFilter() {
+
+  const selectedEmployees = [...document.querySelectorAll('#employeeCheckboxes input:checked')].map(i => i.value);
+  const selectedPlaces = [...document.querySelectorAll('#placeCheckboxes input:checked')].map(i => i.value);
+
+  console.log("Spouštím applyAdvancedFilter");
+  console.log("Vybraní zaměstnanci:", selectedEmployees);
+  console.log("Vybraná místa:", selectedPlaces);
+  console.log("Docházka:", DOCHAZKA);
+
+  // 🧹 Reset klasického filtru (selecty)
+  const basicEmployeeSelect = document.getElementById('employeeSelect');
+    if (basicEmployeeSelect) basicEmployeeSelect.value = '';
+
+  const basicPlaceSelect = document.getElementById('placeSelect');
+    if (basicPlaceSelect) basicPlaceSelect.value = '';
+
+
+  const countsByStatus = {};
+
+  for (let r of DOCHAZKA) {
+    const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
+    const place = r.place || 'nezadáno';
+
+    if (
+      (selectedEmployees.length === 0 || selectedEmployees.includes(fullName)) &&
+      (selectedPlaces.length === 0 || selectedPlaces.includes(place))
+    ) {
+      const key = r.date + '_' + r.status;
+      countsByStatus[key] = (countsByStatus[key] || 0) + 1;
+    }
+  }
+
+  calendar.removeAllEvents();
+
+  for (const key in countsByStatus) {
+    const [date, status] = key.split('_');
+    const count = countsByStatus[key];
+    const color = STATUS_COLORS[status] || 'gray';
+
+    calendar.addEvent({
+      title: `${count}x ${status}`,
+      start: date,
+      allDay: true,
+      backgroundColor: color,
+      borderColor: color
+    });
+  }
+
+  const modal = bootstrap.Modal.getInstance(document.getElementById('advancedFilterModal'));
+  modal.hide();
+  document.getElementById('cancelAdvancedFilterBtn').style.display = 'inline-block';
+}
+
+// Funkce pro zrušení rozšířeného filtru - znovu načte stránku
+document.getElementById('cancelAdvancedFilterBtn').addEventListener('click', () => {
+  location.reload();
+});
+
+// Funkce pro označení všech checkboxů v daném kontejneru
+function selectAll(containerId) {
+  const checkboxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]`);
+  const allChecked = [...checkboxes].every(cb => cb.checked);
+
+  checkboxes.forEach(cb => cb.checked = !allChecked);
+}
+
+
+
 document.addEventListener("DOMContentLoaded", function () {
   // 🔍 Vyhledávání zaměstnanců podle jména
   
@@ -765,6 +975,32 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   };
 });
+
+// Funkce pro aktualizaci kalendáře s daty
+function updateCalendar(data) {
+  calendar.removeAllEvents();
+
+  const countsByStatus = {};
+  for (let r of data) {
+    const key = r.date + '_' + r.status;
+    countsByStatus[key] = (countsByStatus[key] || 0) + 1;
+  }
+
+  for (const key in countsByStatus) {
+    const [date, status] = key.split('_');
+    const count = countsByStatus[key];
+    const color = STATUS_COLORS[status] || 'gray';
+
+    calendar.addEvent({
+      title: `${count}x ${status}`,
+      start: date,
+      allDay: true,
+      backgroundColor: color,
+      borderColor: color
+    });
+  }
+}
+
 </script>
 
 
