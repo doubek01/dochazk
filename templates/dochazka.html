@@ -411,33 +411,38 @@
 
 
       document.getElementById('saveNewDochazkaBtn').onclick = async function () {
-        const newIn = document.getElementById('newInTime').value;
-        const newOut = document.getElementById('newOutTime').value;
-        let newPlace = '';
-        const selected = document.getElementById('newPlaceSelect');
-        if (selected.value === 'Jiné') {
-          newPlace = document.getElementById('newPlaceCustom').value.trim();
-        } else {
-          newPlace = selected.value;
+        const newIn = document.getElementById('newInTime').value.trim();
+        const newOut = document.getElementById('newOutTime').value.trim();
+        const placeSelect = document.getElementById('newPlaceSelect');
+        const placeCustom = document.getElementById('newPlaceCustom').value.trim();
+
+        // Kontrola platnosti
+        if (!newIn || !newOut) {
+          showToast('❗Vyplň příchod i odchod');
+          return;
         }
+        if (!placeSelect.value || (placeSelect.value === 'Jiné' && !placeCustom)) {
+          showToast('❗Zadej místo práce');
+          return;
+        }
+
+        const newPlace = placeSelect.value === 'Jiné' ? placeCustom : placeSelect.value;
         const newNote = document.getElementById('newNote').value;
 
         await fetch('/api/dochazka', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            date: dateStr,
+            date: document.getElementById('newDate').value,
             in_time: newIn,
             out_time: newOut,
             place: newPlace,
             note: newNote
           })
         });
-        showToast('Nová docházka přidána');
-        modal.hide();
-        await loadDochazka();  // obnov kalendář
+        showToast('✅ Nová docházka přidána');
+        bootstrap.Modal.getInstance(document.getElementById('newAttendanceModal')).hide();
+        await loadDochazka();
       };
 
       modal.show();

@@ -22,6 +22,9 @@ import base64
 import re
 
 
+print("DB URI:", os.getenv("DATABASE_URL"))
+
+
 # Načti proměnné z .env souboru
 load_dotenv()
 
@@ -654,11 +657,21 @@ def get_zamestnanci():
             except:
                 pass
 
-        last_payment = (
-            db.session.query(db.func.max(Dochazka.date))
-            .filter_by(username=user.username, status="Proplaceno")
+        last_payment_raw = (
+            db.session.query(db.func.max(Vyplata.date))
+            .filter_by(username=user.username)
             .scalar()
         )
+
+        # Bezpečný převod na string
+        if isinstance(last_payment_raw, datetime):
+            last_payment = last_payment_raw.strftime("%Y-%m-%d")
+        else:
+            try:
+                last_payment = datetime.strptime(str(last_payment_raw), "%Y-%m-%d").strftime("%Y-%m-%d")
+            except:
+                last_payment = ""
+
 
         job_location = (user.job_location or "").strip()
         if job_location not in ["Brigádník", "Stálý kopáč"]:

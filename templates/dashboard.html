@@ -14,24 +14,6 @@
         <div class="card-body">
           <h4 class="card-title">Rychlý přehled</h4>
 
-          <div class="row text-center mb-4">
-            <div class="d-flex justify-content-between mb-4">
-              {% if not today_in %}
-              <form method="post" action="{{ url_for('zadat_prichod') }}">
-                <button class="btn btn-success px-4 py-2">🟢 Příchod</button>
-              </form>
-              {% else %}
-              <div></div>
-              {% endif %}
-
-              {% if not today_out %}
-              <button class="btn btn-danger px-4 py-2" data-bs-toggle="modal" data-bs-target="#odchodModal">
-                🔴 Odchod
-              </button>
-              {% endif %}
-            </div>
-
-
           {% if today_in or today_out %}
           <ul class="list-group">
             <li class="list-group-item d-flex justify-content-between">
@@ -45,104 +27,23 @@
           </ul>
           {% else %}
           <div class="alert alert-info mt-3" role="alert">
-            Docházka ještě dnes nebyla zadána.
+            Dneska jsi v práci ještě nebyl... nebo jsi to zapomněl zapsat 😉
           </div>
           {% endif %}
         </div>
       </div>
-    </div>
-    <!-- Navigace -->
-    <div class="mb-3">
-      <a href="{{ url_for('dochazka') }}" class="btn btn-primary btn-lg w-100 mb-2">Docházka</a>
-      <a href="{{ url_for('muj_profil') }}" class="btn btn-outline-primary btn-lg w-100">Můj profil</a>
-    </div>
 
-    <hr>
+      <!-- Navigace -->
+      <div class="mb-3 d-grid gap-2">
+        <a href="{{ url_for('dochazka') }}" class="btn btn-primary btn-lg">Docházka</a>
+        <a href="{{ url_for('muj_profil') }}" class="btn btn-outline-primary btn-lg">Můj profil</a>
+      </div>
 
-    <div class="text-end">
-      <a href="{{ url_for('logout') }}" class="btn btn-danger">Odhlásit se</a>
-    </div>
-    
-    <!-- Modal pro zadání odchodu -->
-    <div class="modal fade" id="odchodModal" tabindex="-1" aria-labelledby="odchodModalLabel" aria-hidden="true">
-      <div class="modal-dialog">
-        <form method="post" action="{{ url_for('zadat_odchod') }}" class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="odchodModalLabel">Zadat dnešní odchod</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
-          </div>
-          
-          <div class="modal-body">
-            <div class="mb-3 text-center">
-              <div><strong>Příchod:</strong> {{ today_in or '—' }}</div>
-              <div><strong>Aktuální čas:</strong> {{ current_time }}</div>
-              {% if today_hours %}
-              <div><strong>Hodin celkem:</strong> {{ today_hours }}</div>
-              {% endif %}
-            </div>
-
-            <hr>
-
-            <div class="mb-3">
-              <label for="misto" class="form-label">Místo práce</label>
-              <select name="place" id="misto" class="form-select" required>
-                <option value="">-- vyber nebo doplň --</option>
-                <option value="Benecko">Benecko</option>
-                <option value="Náchod">Náchod</option>
-                <option value="Poustevna">Poustevna</option>
-                <option value="Trutnov">Trutnov</option>
-                <option value="vlastni">Jiné (doplň níže)</option>
-              </select>
-            </div>
-            <input type="hidden" name="real_out_time" id="real_out_time">
-            
-            <div class="mb-3" id="vlastni_misto_container" style="display: none;">
-              <label for="vlastni_misto" class="form-label">Jiné místo (volitelné)</label>
-              <input type="text" name="custom_place" id="vlastni_misto" class="form-control">
-            </div>
-
-            <div class="mb-3">
-              <label for="poznamka" class="form-label">Poznámka</label>
-              <textarea name="poznamka" id="poznamka" rows="2" class="form-control" placeholder="Např. natírání laviček, obsluha baru..."></textarea>
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button type="submit" class="btn btn-danger">🔴 Potvrdit odchod</button>
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
-          </div>
-        </form>
+      <div class="text-end">
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Odhlásit se</a>
       </div>
     </div>
-    
-    <script>
-      document.addEventListener('DOMContentLoaded', function () {
-        const realOutTimeInput = document.getElementById('real_out_time');
-        const odchodModal = document.getElementById('odchodModal');
-
-        odchodModal.addEventListener('show.bs.modal', function () {
-          const now = new Date();
-          const hours = now.getHours().toString().padStart(2, '0');
-          const minutes = now.getMinutes().toString().padStart(2, '0');
-          realOutTimeInput.value = `${hours}:${minutes}`;
-        });
-      });
-    </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-      
-    <script>
-      const mistoSelect = document.getElementById('misto');
-      const vlastniMistoContainer = document.getElementById('vlastni_misto_container');
-
-      mistoSelect.addEventListener('change', function () {
-        if (this.value === 'vlastni') {
-          vlastniMistoContainer.style.display = 'block';
-        } else {
-          vlastniMistoContainer.style.display = 'none';
-        }
-      });
-    </script>
-      
   </body>
 </html>
